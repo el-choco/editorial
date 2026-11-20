@@ -7,7 +7,7 @@ const root = path.resolve(__dirname, '..');
 const mithril = require(path.join(root, 'js/node_modules/mithril'));
 
 const fixture = {
-  version: '0.1.0-alpha.2', draft: { id: 7, owner_id: 1, title: 'A useful guide', content: 'Saved text', tags: [1],
+  version: '1.0.0', draft: { id: 7, owner_id: 1, title: 'A useful guide', content: 'Saved text', tags: [1],
     status: 'draft', version: 4, content_version: 2, required_approvals: 1, updated_at: '2026-11-18 10:00:00', discussion_id: null },
   role: 'owner', canEdit: true, canApprove: false, canPublish: false, approvals: 0,
   members: [{ user_id: 2, role: 'reviewer', approved_version: null }], users: { 1: 'Owner', 2: 'Reviewer' }, history: [], comments: [],

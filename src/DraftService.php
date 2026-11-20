@@ -10,7 +10,7 @@ use Psr\Http\Message\ServerRequestInterface;
 
 final class DraftService
 {
-    public const VERSION = '0.1.0-alpha.2';
+    public const VERSION = '1.0.0';
 
     public function __construct(
         private readonly ConnectionInterface $db,

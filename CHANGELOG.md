@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.0 — 2026-11-20
+
+- Publish the tested collaborative drafting and review workflow as the first stable release.
+- Update English and German installation and upgrade instructions.
+- Keep the existing database schema and review permissions unchanged.
+- Restore the manuscript editor background to `#eaebf0` for the standard and rich-text editors.
+
 ## 0.1.0-alpha.2 — 2026-11-19
 
 - Use Flarum’s native TextEditor and extension-provided icon toolbar with an isolated composer state.

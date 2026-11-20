@@ -4,7 +4,7 @@
 
 Editorial is a private collaborative writing workspace for Flarum 2. Invite other members, keep saved revisions, discuss changes internally and publish an approved manuscript as a normal forum discussion.
 
-**Package:** `el-choco/editorial` · **Version:** `0.1.0-alpha.2` · **License:** MIT
+**Package:** `el-choco/editorial` · **Version:** `1.0.0` · **License:** MIT
 
 ## Features
 
@@ -27,9 +27,22 @@ Editorial is a private collaborative writing workspace for Flarum 2. Invite othe
 
 Flarum `^2.0.2`, PHP `^8.3` and Flarum's configured database. Flarum 1.8 is not supported by this version. FoF Drafts and Admin Console are not dependencies.
 
-This first test package is supplied as a ZIP. Follow [the English installation guide](INSTALL-EN.md) or [the German installation guide](INSTALL-DE.md). Both use `/tmp` for the transferred ZIP and a persistent source directory for Composer. Built JavaScript is included; Node.js is unnecessary on the forum server.
+The release is supplied as an installable ZIP. Follow [the English installation guide](INSTALL-EN.md) or [the German installation guide](INSTALL-DE.md). Both use `/tmp` for the transferred ZIP and a persistent source directory for Composer. Built JavaScript is included; Node.js is unnecessary on the forum server.
 
 Enabling the extension creates four database tables. No worker, scheduler, external service or API key is required.
+
+## Installation through Packagist
+
+Once this release has been submitted to Packagist, run the following as the forum filesystem user inside the Flarum directory (inside the container for Docker):
+
+```bash
+composer require el-choco/editorial:"^1.0" --update-no-dev --minimal-changes --no-scripts --no-interaction
+php flarum extension:enable el-choco-editorial
+php flarum migrate --no-interaction
+php flarum cache:clear --force
+```
+
+With CrazyMax, run `extension sync` after the successful Composer operation and before the Flarum commands. `"^1.0"` permits future 1.x updates; `"*"` also permits future major versions, subject to Composer stability settings. Exact version requirements remain pinned. For a move from a local path installation to Packagist, remove the old path repository entry from its project or global configuration and replace the pinned requirement with `"^1.0"`.
 
 ## Permissions and administration
 
@@ -37,7 +50,7 @@ Grant **Use Editorial and participate in invited drafts** to the groups that sho
 
 The separate **Read every private draft, comment, archive and permanently delete drafts** permission grants access to all Editorial drafts, including drafts where the manager was not invited. Give it only to trusted staff. It does not grant the right to edit or publish another owner's manuscript.
 
-The required approval count applies to new drafts. Existing drafts keep the count they were created with. Editors may change text while a draft is editable; only invited reviewers may approve. The owner manages invitations, submits for review, returns to editing and publishes. Reviewers can request changes with a mandatory comment. Changes to the team are allowed only while editing and clear approvals.
+The required approval count applies to new drafts. Existing drafts keep the count they were created with. Editors may change text while a draft is editable; only invited reviewers may approve. The owner manages invitations, submits for review, returns to editing and publishes. Self-approval remains disabled in version 1.0.0. Reviewers can request changes with a mandatory comment. Changes to the team are allowed only while editing and clear approvals.
 
 ## First workflow
 
@@ -63,7 +76,7 @@ Limits: 50 active drafts per owner, 20 invited members per draft, 80-character t
 ## First-version boundaries
 
 - Saved revisions and manual conflict resolution, without live cursors or simultaneous text merging.
-- Uses Flarum’s native TextEditor. Its standard hooks allow active editor extensions to contribute their tools. Tools that assume the global composer or a specific discussion composer may need an additional integration. The installed Rich Text/Upload/MagicBB combination still needs verification on the target forum. Uploaded media follows your upload extension’s visibility settings; private manuscripts do not make uploaded files private.
+- Uses Flarum’s native TextEditor. Its standard hooks allow active editor extensions to contribute their tools. Tools that assume the global composer or a specific discussion composer may need an additional integration. Compatibility with third-party editor tools depends on their composer-context assumptions. Uploaded media follows your upload extension’s visibility settings; private manuscripts do not make uploaded files private.
 - No automatic saves, email invitations, unread notifications, inline comment threads, ownership transfer or scheduled publication.
 - Archives are read-only. There is no unarchive action in this version.
 - Flarum validates categories and publication permissions at publication time. A forum extension requiring additional discussion fields may require a later Editorial integration.
@@ -73,7 +86,7 @@ Limits: 50 active drafts per owner, 20 invited members per draft, 80-character t
 
 Backend checks use real Flarum 2.0.2 classes, migrations, query builders and an isolated SQLite database. They cover roles, privacy, state transitions, revision restoration, stale writes, revoked reviewer access, rollback and duplicate publication prevention. The publisher adapter is exercised with the real Flarum API client and a controlled response handler. Browser checks use the built frontend, real Flarum TextEditor/BasicEditorDriver classes and representative data.
 
-The maintainer installed Alpha 1 and confirmed its basic operation. Real publication and concurrent requests on the target CrazyMax/MySQL environment, and the new Alpha 2 editor integrations, still require testing. This is an initial alpha, not a stable release.
+The maintainer reports successful testing on the target forum without observed errors. Local regression checks cover the cases described above; this does not guarantee compatibility with every third-party composer tool. This is the first stable release.
 
 ```bash
 cd js
@@ -96,7 +109,7 @@ The backend tests require `pdo_sqlite` and `mbstring` in the test PHP runtime. T
 
 Editorial ist ein privater Redaktionsbereich für Flarum 2. Lade Mitglieder ein, speichere Textrevisionen, sammle interne Rückmeldungen und veröffentliche ein freigegebenes Manuskript als normale Diskussion.
 
-**Paket:** `el-choco/editorial` · **Version:** `0.1.0-alpha.2` · **Lizenz:** MIT
+**Paket:** `el-choco/editorial` · **Version:** `1.0.0` · **Lizenz:** MIT
 
 ## Funktionen
 
@@ -119,9 +132,22 @@ Editorial ist ein privater Redaktionsbereich für Flarum 2. Lade Mitglieder ein,
 
 Flarum `^2.0.2`, PHP `^8.3` und Flarums eingerichtete Datenbank. Flarum 1.8 wird von dieser Ausgabe nicht unterstützt. FoF Drafts und Admin Console sind keine Voraussetzung.
 
-Die erste Testversion wird als ZIP geliefert. Verwende [die deutsche Anleitung](INSTALL-DE.md) oder [die englische Anleitung](INSTALL-EN.md). Die ZIP wird nach `/tmp` übertragen und für Composer in einen dauerhaften Quellordner entpackt. Gebautes JavaScript liegt bei; Node.js wird auf dem Forumserver nicht benötigt.
+Die Version wird als installierbare ZIP geliefert. Verwende [die deutsche Anleitung](INSTALL-DE.md) oder [die englische Anleitung](INSTALL-EN.md). Die ZIP wird nach `/tmp` übertragen und für Composer in einen dauerhaften Quellordner entpackt. Gebautes JavaScript liegt bei; Node.js wird auf dem Forumserver nicht benötigt.
 
 Beim Aktivieren entstehen vier Datenbanktabellen. Ein Worker, Cronjob, externer Dienst oder API-Schlüssel ist nicht erforderlich.
+
+## Installation über Packagist
+
+Sobald diese Version auf Packagist veröffentlicht wurde, als Dateisystembenutzer des Forums im Flarum-Verzeichnis ausführen (bei Docker im Container):
+
+```bash
+composer require el-choco/editorial:"^1.0" --update-no-dev --minimal-changes --no-scripts --no-interaction
+php flarum extension:enable el-choco-editorial
+php flarum migrate --no-interaction
+php flarum cache:clear --force
+```
+
+Bei CrazyMax nach erfolgreichem Composer-Vorgang und vor den Flarum-Befehlen `extension sync` ausführen. `"^1.0"` erlaubt künftige 1.x-Updates; `"*"` erlaubt auch spätere Hauptversionen unter Beachtung von Composers Stabilitätseinstellungen. Exakte Versionsvorgaben bleiben festgelegt. Beim Wechsel von einer lokalen Path-Installation zu Packagist den bisherigen Repository-Eintrag aus der Projekt- oder globalen Konfiguration entfernen und die festgelegte Versionsvorgabe durch `"^1.0"` ersetzen.
 
 ## Rechte und Einrichtung
 
@@ -129,7 +155,7 @@ Erlaube den gewünschten Gruppen **Editorial nutzen und an eingeladenen Entwürf
 
 Das zusätzliche Recht **Alle privaten Entwürfe lesen, kommentieren, archivieren und endgültig löschen** erlaubt Zugriff auf sämtliche Editorial-Entwürfe – auch ohne Einladung. Vergib es nur an vertrauenswürdige Mitarbeiter. Es erlaubt nicht, fremde Manuskripte zu bearbeiten oder unter einem anderen Eigentümer zu veröffentlichen.
 
-Die Zahl erforderlicher Freigaben gilt für neue Entwürfe. Bestehende Entwürfe behalten ihre ursprüngliche Vorgabe. Bearbeiter ändern den Text im Entwurfszustand; ausschließlich eingeladene Prüfer dürfen freigeben. Der Eigentümer verwaltet das Team, fordert die Prüfung an, öffnet den Entwurf erneut und veröffentlicht ihn. Prüfer können Änderungen mit einem verpflichtenden Kommentar anfordern. Teamänderungen sind nur während der Bearbeitung möglich und heben Freigaben auf.
+Die Zahl erforderlicher Freigaben gilt für neue Entwürfe. Bestehende Entwürfe behalten ihre ursprüngliche Vorgabe. Bearbeiter ändern den Text im Entwurfszustand; ausschließlich eingeladene Prüfer dürfen freigeben. Der Eigentümer verwaltet das Team, fordert die Prüfung an, öffnet den Entwurf erneut und veröffentlicht ihn. Die Selbstfreigabe bleibt in Version 1.0.0 ausgeschlossen. Prüfer können Änderungen mit einem verpflichtenden Kommentar anfordern. Teamänderungen sind nur während der Bearbeitung möglich und heben Freigaben auf.
 
 ## Erster Durchlauf
 
@@ -155,7 +181,7 @@ Grenzen: 50 aktive Entwürfe pro Eigentümer, 20 eingeladene Mitglieder pro Entw
 ## Umfang der ersten Version
 
 - Gespeicherte Revisionen und manuelles Zusammenführen bei Konflikten; keine Live-Cursor oder automatische Zusammenführung gleichzeitiger Texteingaben.
-- Flarums nativer TextEditor verwendet seine normalen Erweiterungspunkte für Editor-Werkzeuge. Werkzeuge, die den globalen Composer oder einen bestimmten Diskussions-Composer voraussetzen, können eine zusätzliche Anbindung benötigen. Die installierte Kombination aus Rich Text, Upload und MagicBB muss noch im Ziel-Forum geprüft werden. Hochgeladene Medien unterliegen den Sichtbarkeitseinstellungen der Upload-Erweiterung; ein privates Manuskript macht Upload-Dateien nicht automatisch privat.
+- Flarums nativer TextEditor verwendet seine normalen Erweiterungspunkte für Editor-Werkzeuge. Werkzeuge, die den globalen Composer oder einen bestimmten Diskussions-Composer voraussetzen, können eine zusätzliche Anbindung benötigen. Die Verträglichkeit weiterer Editor-Werkzeuge hängt von deren Anforderungen an den Composer-Kontext ab. Hochgeladene Medien unterliegen den Sichtbarkeitseinstellungen der Upload-Erweiterung; ein privates Manuskript macht Upload-Dateien nicht automatisch privat.
 - Kein automatisches Speichern, keine Einladungs-E-Mails, Benachrichtigungen über ungelesene Entwürfe, verankerten Kommentarthreads, Eigentümerwechsel oder zeitgesteuerten Veröffentlichungen.
 - Archive sind schreibgeschützt. Eine Wiederöffnung archivierter Entwürfe gibt es in dieser Version nicht.
 - Flarum prüft Kategorien und Veröffentlichungsrechte beim Veröffentlichen. Erweiterungen mit zusätzlichen verpflichtenden Diskussionsfeldern können eine spätere Editorial-Anbindung benötigen.
@@ -165,6 +191,6 @@ Grenzen: 50 aktive Entwürfe pro Eigentümer, 20 eingeladene Mitglieder pro Entw
 
 Die Backend-Prüfungen verwenden echte Klassen aus Flarum 2.0.2, die Migrationen, Datenbankabfragen und eine isolierte SQLite-Datenbank. Sie prüfen Rollen, Privatsphäre, Statuswechsel, Wiederherstellen, veraltete Speicherstände, entzogene Prüferrechte, Rückabwicklung und Schutz vor doppelter Veröffentlichung. Der Veröffentlichungsadapter wird mit Flarums echtem API-Client und einer kontrollierten Antwort geprüft. Browserprüfungen verwenden den gebauten Frontend-Code, Flarums echte TextEditor-/BasicEditorDriver-Klassen und Beispieldaten.
 
-Der Betreiber hat Alpha 1 installiert und den grundsätzlichen Betrieb bestätigt. Echte Veröffentlichung, parallele Zugriffe im CrazyMax-/MySQL-Zielsystem und die neuen Editor-Anbindungen von Alpha 2 müssen noch praktisch geprüft werden. Dies ist eine erste Alpha-Version.
+Der Betreiber meldet erfolgreiche Tests im Ziel-Forum ohne beobachtete Fehler. Die lokalen Prüfungen decken die oben beschriebenen Fälle ab; eine Kompatibilitätsgarantie für sämtliche Editor-Werkzeuge anderer Anbieter ergibt sich daraus nicht. Dies ist die erste stabile Version.
 
-[Update from Alpha 1 / Update von Alpha 1](UPDATE-DE.md)
+[Deutsche Update-Anleitung](UPDATE-DE.md) · [English update guide](UPDATE-EN.md)
