@@ -61,9 +61,38 @@
   .Editorial-member small, .Editorial-event small { display: block; margin-top: 5px; overflow-wrap: anywhere; }
   .Editorial-snapshot { padding: 16px; background: var(--control-bg); border-radius: 12px; margin-top: 18px; }
   .Editorial-snapshot pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 440px; overflow-y: auto; }
-  .Editorial-danger { justify-content: end; }
-  .Editorial-danger .Button { color: var(--muted-color); }
   .Editorial-alert { margin-bottom: 18px; }
+  .Editorial-heading > .Editorial-status { padding: 12px 22px; font-size: 15px; color: #fff; background: var(--editorial-accent); box-shadow: 0 4px 12px fade(#243c5b, 12%); }
+  .Editorial-heading > .Editorial-status[data-status=review] { background: #8a641c; }
+  .Editorial-heading > .Editorial-status[data-status=approved], .Editorial-heading > .Editorial-status[data-status=published] { background: #247459; }
+  select[multiple] { height: auto; min-height: 170px; padding: 8px; }
+  select[multiple] option { padding: 7px 12px; border-radius: 5px; }
+  .Editorial-select { position: relative; }
+  .Editorial-select select { appearance: none; padding-right: 44px; }
+  .Editorial-select > i { position: absolute; right: 17px; top: 50%; transform: translateY(-50%); color: var(--editorial-accent); pointer-events: none; }
+  .Editorial-danger { justify-content: start; gap: 10px; }
+  .Editorial-danger .Button { min-height: 48px; padding: 12px 18px; font-weight: 650; color: var(--editorial-accent); background: var(--body-bg); border: 1px solid var(--editorial-accent); }
+  .Editorial-danger .Button:last-child { color: #b63c3c; border-color: #d79595; }
+  .Editorial-userSearch { position: relative; }
+  .Editorial-userSearch > small { display: block; margin-top: 7px; }
+  .Editorial-suggestions { position: absolute; top: 45px; left: 0; right: 0; z-index: 20; padding: 6px; margin: 0; list-style: none; background: var(--body-bg); border: 1px solid var(--control-bg); border-radius: 10px; box-shadow: 0 10px 28px fade(#243c5b, 15%); max-height: 260px; overflow-y: auto; }
+  .Editorial-suggestions li { padding: 10px 12px; cursor: pointer; border-radius: 6px; }
+  .Editorial-suggestions li:hover, .Editorial-suggestions li[aria-selected=true] { background: var(--control-bg); }
+  .Editorial-suggestions small { margin-left: 10px; }
+  .Editorial-person { display: flex; align-items: center; gap: 11px; margin: 18px 0; }
+  .Editorial-person strong { display: block; overflow-wrap: anywhere; }
+  .Editorial-personIcon { display: grid; place-items: center; flex: 0 0 38px; height: 38px; border-radius: 12px; background: fade(#4d698e, 12%); color: var(--editorial-accent); }
+  .Editorial-personIcon[data-role=owner] { color: #92651b; background: #fff0d5; }
+  .Editorial-personIcon[data-role=reviewer] { color: #247459; background: #e4f5ec; }
+  .Editorial-roleBadge { display: inline-block; margin-top: 4px; padding: 2px 8px; border-radius: 20px; color: var(--editorial-accent); background: var(--control-bg); font-size: 11px; font-weight: 650; }
+  .Editorial-roleBadge[data-role=owner] { color: #92651b; background: #fff0d5; }
+  .Editorial-roleBadge[data-role=reviewer] { color: #247459; background: #e4f5ec; }
+  .Editorial-nativeEditor { margin: 8px 0; padding: 0; border: 0; min-width: 0; }
+  .Editorial-nativeEditor .TextEditor-editor, .Editorial-nativeEditor .tiptap { min-height: 400px; height: auto; max-height: none; line-height: 1.7; }
+  .Editorial-nativeEditor .TextEditor-controls { display: flex; flex-wrap: wrap; gap: 8px; position: static; list-style: none; padding: 12px 0; margin: 0; align-items: center; }
+  .Editorial-nativeEditor .TextEditor-toolbar { margin-left: auto; display: flex; flex-wrap: wrap; gap: 4px; }
+  .Editorial-nativeEditor .TextEditor-controls .App-primaryControl { display: none; }
+  .Editorial-nativeEditor .Button--icon { min-width: 36px; min-height: 36px; padding: 8px; }
   @media (max-width: 991px) {
     .Editorial-workspace { grid-template-columns: minmax(0, 1fr); }
     .Editorial-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }

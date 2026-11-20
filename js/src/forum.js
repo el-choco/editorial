@@ -3,6 +3,8 @@ import Page from 'flarum/common/components/Page';
 import Link from 'flarum/common/components/Link';
 import LinkButton from 'flarum/common/components/LinkButton';
 import LoadingIndicator from 'flarum/common/components/LoadingIndicator';
+import TextEditor from 'flarum/common/components/TextEditor';
+import ComposerState from 'flarum/forum/states/ComposerState';
 import Routes from 'flarum/common/extenders/Routes';
 import { extend as extendMethod } from 'flarum/common/extend';
 import IndexSidebar from 'flarum/forum/components/IndexSidebar';
@@ -21,6 +23,31 @@ const errorCode = (error) => {
 const button = (label, onclick, disabled = false, primary = false) => m('button.Button', {
   type: 'button', className: primary ? 'Button--primary' : '', onclick, disabled,
 }, tr(label));
+
+export class EditorialTextEditor extends TextEditor {
+  buildEditorParams() {
+    const params = super.buildEditorParams();
+    params.classNames.push('Editorial-content');
+    return params;
+  }
+
+  onbuild() {
+    super.onbuild();
+    this.editorDriver = this.attrs.composer.editor;
+    const editor = this.$('.TextEditor-editor')[0];
+    if (editor) {
+      editor.id = 'editorial-content';
+      editor.setAttribute('aria-label', txt('content'));
+      if (editor.tagName === 'TEXTAREA') editor.maxLength = 63000;
+    }
+  }
+
+  onremove(vnode) {
+    super.onremove(vnode);
+    this.editorDriver?.destroy();
+    if (this.attrs.composer.editor === this.editorDriver) this.attrs.composer.editor = null;
+  }
+}
 
 export class EditorialIndex extends Page {
   oninit(vnode) {
@@ -87,6 +114,11 @@ export class EditorialDraft extends Page {
     this.tab = 'write';
     this.username = '';
     this.inviteRole = 'reviewer';
+    this.suggestions = [];
+    this.searchRevision = 0;
+    this.suggestionIndex = 0;
+    this.editorKey = 0;
+    this.composer = new ComposerState();
     this.comment = '';
     this.tags = [];
     this.tagOptions = [];
@@ -101,6 +133,8 @@ export class EditorialDraft extends Page {
   }
 
   onremove(vnode) {
+    clearTimeout(this.searchTimer);
+    this.searchRevision++;
     if (this.dirty() || this.comment) {
       pendingManuscripts.set(this.bufferKey, { title: this.title, content: this.content, tags: [...this.tags], comment: this.comment, version: this.data.draft.version });
     }
@@ -118,6 +152,8 @@ export class EditorialDraft extends Page {
     this.title = data.draft.title;
     this.content = data.draft.content;
     this.tags = [...data.draft.tags];
+    this.editorKey++;
+    this.composer.fields.content(this.content);
     this.snapshot = null;
   }
 
@@ -132,6 +168,7 @@ export class EditorialDraft extends Page {
         const pending = this.recoverPending && pendingManuscripts.get(this.bufferKey);
         if (pending) {
           this.title = pending.title; this.content = pending.content; this.tags = [...pending.tags]; this.comment = pending.comment;
+          this.composer.fields.content(this.content);
           this.recovered = true;
           if (Number(pending.version) !== Number(data.draft.version)) {
             this.data.draft.version = pending.version;
@@ -164,7 +201,7 @@ export class EditorialDraft extends Page {
       }
       this.accept(data);
       if (action === 'comment' || action === 'changes') this.comment = '';
-      if (action === 'invite') this.username = '';
+      if (action === 'invite') this.searchMembers('');
     } catch (error) { if (this.active) this.error = errorCode(error); }
     finally { if (this.active) { this.busy = false; m.redraw(); } }
   }
@@ -184,13 +221,48 @@ export class EditorialDraft extends Page {
     document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
-  insert(before, after = '') {
-    const input = document.getElementById('editorial-content');
-    if (!input || !this.data?.canEdit || this.busy) return;
-    const start = input.selectionStart;
-    const end = input.selectionEnd;
-    this.content = this.content.slice(0, start) + before + this.content.slice(start, end) + after + this.content.slice(end);
-    m.redraw.sync(); input.focus(); input.setSelectionRange(start + before.length, end + before.length);
+  searchMembers(value) {
+    this.username = value;
+    this.suggestions = [];
+    this.searchError = false;
+    this.searchLoading = false;
+    clearTimeout(this.searchTimer);
+    const revision = ++this.searchRevision;
+    const query = value.trim();
+    if (Array.from(query).length < 3) return;
+    this.searchLoading = true;
+    this.searchTimer = setTimeout(async () => {
+      try {
+        const users = await app.store.find('users', { filter: { q: query }, page: { limit: 6 } });
+        if (!this.active || revision !== this.searchRevision) return;
+        this.suggestions = users.filter((user) => Number(user.id()) !== Number(this.data.draft.owner_id)).slice(0, 6);
+        this.suggestionIndex = 0;
+      } catch {
+        if (this.active && revision === this.searchRevision) this.searchError = true;
+      } finally {
+        if (this.active && revision === this.searchRevision) { this.searchLoading = false; m.redraw(); }
+      }
+    }, 250);
+  }
+
+  chooseMember(user) {
+    clearTimeout(this.searchTimer);
+    this.searchRevision++;
+    this.username = user.username();
+    this.suggestions = [];
+    this.searchLoading = false;
+  }
+
+  memberKey(event) {
+    if (event.key === 'Escape') { clearTimeout(this.searchTimer); this.searchRevision++; this.suggestions = []; this.searchLoading = false; return; }
+    if (!this.suggestions.length) return;
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      this.suggestionIndex = (this.suggestionIndex + (event.key === 'ArrowDown' ? 1 : -1) + this.suggestions.length) % this.suggestions.length;
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      this.chooseMember(this.suggestions[this.suggestionIndex]);
+    }
   }
 
   user(id) { return this.data.users[id] || txt('deleted_user'); }
@@ -225,13 +297,15 @@ export class EditorialDraft extends Page {
               m('label', { for: 'editorial-title' }, tr('title')),
               m('input.FormControl', { id: 'editorial-title', value: this.title, maxlength: 80, disabled: !canEdit || this.busy, oninput: (event) => { this.title = event.target.value; } }),
               m('label', { for: 'editorial-content' }, tr('content')),
-              canEdit && m('.Editorial-format', [button('bold', () => this.insert('**', '**'), this.busy), button('italic', () => this.insert('*', '*'), this.busy),
-                button('quote', () => this.insert('> '), this.busy), button('link', () => this.insert('[', '](https://)'), this.busy)]),
-              m('textarea.FormControl.Editorial-content', { id: 'editorial-content', value: this.content, maxlength: 63000, rows: 18,
-                readonly: !canEdit, disabled: this.busy, oninput: (event) => { this.content = event.target.value; } }),
+              canEdit ? m('fieldset.Editorial-nativeEditor', { disabled: this.busy, 'aria-busy': !!this.busy }, m(EditorialTextEditor, {
+                key: this.editorKey, composer: this.composer, value: this.content,
+                submitLabel: txt('save'), disabled: this.busy,
+                onchange: (value) => { this.content = value; this.composer.fields.content(value); m.redraw(); },
+                onsubmit: () => { if (!this.busy && this.dirty()) this.action('save', { title: this.title, content: this.content, tags: this.tags }); },
+              })) : m('textarea.FormControl.Editorial-content', { id: 'editorial-content', value: this.content, rows: 18, readonly: true }),
               m('small.Editorial-muted', tr('format_help')),
               this.tagOptions.length > 0 && [m('label', { for: 'editorial-tags' }, tr('tags')),
-                m('select.FormControl', { id: 'editorial-tags', multiple: true, disabled: !canEdit || this.busy,
+                m('select.FormControl', { id: 'editorial-tags', multiple: true, size: 6, disabled: !canEdit || this.busy,
                   onchange: (event) => { this.tags = Array.from(event.target.selectedOptions, (option) => Number(option.value)); } },
                   [...this.tagOptions.map((tag) => ({ id: Number(tag.id()), name: tag.name() })), ...this.tags.filter((id) => !this.tagOptions.some((tag) => Number(tag.id()) === id)).map((id) => ({ id, name: '#' + id }))]
                     .map((tag) => m('option', { value: tag.id, selected: this.tags.includes(tag.id) }, tag.name)))],
@@ -263,14 +337,19 @@ export class EditorialDraft extends Page {
               canPublish && button('publish', () => this.action('publish'), disabled, true)]),
             draft.discussion_id && m(Link, { href: app.route('discussion', { id: draft.discussion_id }), className: 'Button Button--primary' }, tr('open_discussion')),
           ]),
-          m('section.Editorial-card', [m('h3', tr('team')), m('p', this.user(draft.owner_id) + ' · ' + txt('role_owner')),
-            ...this.data.members.map((member) => m('p', [this.user(member.user_id), ' · ', tr('role_' + member.role),
-              Number(member.approved_version) === Number(draft.content_version) && icon('check-circle')]))]),
+          m('section.Editorial-card.Editorial-people', [m('h3', tr('team')),
+            this.person(draft.owner_id, 'owner'),
+            ...this.data.members.map((member) => this.person(member.user_id, member.role, Number(member.approved_version) === Number(draft.content_version)))]),
           m('section.Editorial-card.Editorial-note', [icon('lock'), m('h3', tr('private_title')), m('p', tr('privacy'))]),
           owner && m('.Editorial-actions.Editorial-danger', [!closed && button('archive', () => this.action('archive'), disabled), button('delete', () => this.action('delete'), disabled)]),
         ]),
       ]),
     ];
+  }
+
+  person(id, role, approved = false) {
+    return m('.Editorial-person', [m('span.Editorial-personIcon', { 'data-role': role, 'aria-hidden': 'true' }, icon(role === 'owner' ? 'crown' : role === 'reviewer' ? 'clipboard-check' : 'pen')),
+      m('div', [m('strong', this.user(id)), m('span.Editorial-roleBadge', { 'data-role': role }, tr('role_' + role))]), approved && m('span', { title: txt('status_approved') }, icon('check-circle'))]);
   }
 
   team(owner, disabled) {
@@ -280,10 +359,20 @@ export class EditorialDraft extends Page {
         owner && this.data.draft.status === 'draft' && button('remove', () => this.action('remove', { userId: Number(member.user_id) }), disabled)])),
       owner && this.data.draft.status === 'draft' && [
         m('label', { for: 'editorial-username' }, tr('username')),
-        m('input.FormControl', { id: 'editorial-username', value: this.username, maxlength: 100, disabled: this.busy, oninput: (event) => { this.username = event.target.value; } }),
+        m('.Editorial-userSearch', [
+          m('input.FormControl', { id: 'editorial-username', value: this.username, maxlength: 100, disabled: this.busy,
+            role: 'combobox', autocomplete: 'off', 'aria-autocomplete': 'list', 'aria-expanded': this.suggestions.length > 0,
+            'aria-controls': 'editorial-user-options', 'aria-describedby': 'editorial-user-help',
+            'aria-activedescendant': this.suggestions.length ? 'editorial-user-option-' + this.suggestionIndex : undefined,
+            oninput: (event) => this.searchMembers(event.target.value), onkeydown: (event) => this.memberKey(event) }),
+          this.suggestions.length > 0 && m('ul.Editorial-suggestions', { id: 'editorial-user-options', role: 'listbox', 'aria-label': txt('suggestions') },
+            this.suggestions.map((user, index) => m('li', { role: 'option', id: 'editorial-user-option-' + index, 'aria-selected': index === this.suggestionIndex,
+              onmousedown: (event) => { event.preventDefault(); this.chooseMember(user); } }, [m('strong', user.username()), user.displayName() !== user.username() && m('small', user.displayName())]))),
+          m('small.Editorial-muted', { id: 'editorial-user-help', role: 'status' }, this.searchLoading ? tr('searching') : this.searchError ? tr('search_failed') : tr('search_help')),
+        ]),
         m('label', { for: 'editorial-role' }, tr('role')),
-        m('select.FormControl', { id: 'editorial-role', value: this.inviteRole, disabled: this.busy, onchange: (event) => { this.inviteRole = event.target.value; } },
-          ['reviewer', 'editor'].map((role) => m('option', { value: role }, tr('role_' + role)))),
+        m('.Editorial-select', [m('select.FormControl', { id: 'editorial-role', value: this.inviteRole, disabled: this.busy, onchange: (event) => { this.inviteRole = event.target.value; } },
+          ['reviewer', 'editor'].map((role) => m('option', { value: role }, tr('role_' + role)))), icon('chevron-down')]),
         m('.Editorial-actions', button('invite', () => this.action('invite', { username: this.username, role: this.inviteRole }), disabled || !this.username.trim(), true)),
       ],
     ]);

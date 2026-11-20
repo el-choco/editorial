@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.0-alpha.2 — 2026-11-19
+
+- Use Flarum’s native TextEditor and extension-provided icon toolbar with an isolated composer state.
+- Suggest usernames after three characters with debounce, stale-response protection and keyboard selection.
+- Enlarge the category list, make the role dropdown arrow explicit and highlight workflow status.
+- Add coloured participant roles and larger, left-aligned archive/delete buttons.
+- Replace the promotional banner copy with a factual description.
+- Retain Alpha 1’s database schema and workflow; add frontend regression coverage and an update guide.
+
 ## 0.1.0-alpha.1 — 2026-11-18
 
 - Add private collaborative drafts, owners, invited editors and reviewers.

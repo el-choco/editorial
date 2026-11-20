@@ -4,14 +4,14 @@
 
 Editorial is a private collaborative writing workspace for Flarum 2. Invite other members, keep saved revisions, discuss changes internally and publish an approved manuscript as a normal forum discussion.
 
-**Package:** `el-choco/editorial` · **Version:** `0.1.0-alpha.1` · **License:** MIT
+**Package:** `el-choco/editorial` · **Version:** `0.1.0-alpha.2` · **License:** MIT
 
 ## Features
 
 - A dedicated `/editorial` workspace with a permission-controlled sidebar link.
 - Private drafts with three roles: owner, editor and reviewer.
-- Invitations by existing username; invited drafts appear in each participant's workspace.
-- A manuscript editor with basic Markdown insertion tools and category selection when Flarum Tags is available.
+- Invitations by existing username, with suggestions after three characters; invited drafts appear in each participant's workspace.
+- Flarum’s native TextEditor with its extension-provided icon toolbar and an isolated composer state. A larger category list is available when Flarum Tags is enabled.
 - Explicit saves with permanent text snapshots. Older text revisions can be read and restored as new revisions.
 - Internal plain-text feedback tied to the text revision being discussed.
 - One to five approvals, configured in the administration panel and captured when a draft is created.
@@ -63,7 +63,7 @@ Limits: 50 active drafts per owner, 20 invited members per draft, 80-character t
 ## First-version boundaries
 
 - Saved revisions and manual conflict resolution, without live cursors or simultaneous text merging.
-- A separate plain-text editor. Existing forum markup is preserved; FoF Rich Text, FoF Upload and the regular composer toolbar are not embedded here.
+- Uses Flarum’s native TextEditor. Its standard hooks allow active editor extensions to contribute their tools. Tools that assume the global composer or a specific discussion composer may need an additional integration. The installed Rich Text/Upload/MagicBB combination still needs verification on the target forum. Uploaded media follows your upload extension’s visibility settings; private manuscripts do not make uploaded files private.
 - No automatic saves, email invitations, unread notifications, inline comment threads, ownership transfer or scheduled publication.
 - Archives are read-only. There is no unarchive action in this version.
 - Flarum validates categories and publication permissions at publication time. A forum extension requiring additional discussion fields may require a later Editorial integration.
@@ -71,9 +71,9 @@ Limits: 50 active drafts per owner, 20 invited members per draft, 80-character t
 
 ## Validation
 
-Backend checks use real Flarum 2.0.2 classes, migrations, query builders and an isolated SQLite database. They cover roles, privacy, state transitions, revision restoration, stale writes, revoked reviewer access, rollback and duplicate publication prevention. The publisher adapter is exercised with the real Flarum API client and a controlled response handler. Browser checks use the built frontend with representative data.
+Backend checks use real Flarum 2.0.2 classes, migrations, query builders and an isolated SQLite database. They cover roles, privacy, state transitions, revision restoration, stale writes, revoked reviewer access, rollback and duplicate publication prevention. The publisher adapter is exercised with the real Flarum API client and a controlled response handler. Browser checks use the built frontend, real Flarum TextEditor/BasicEditorDriver classes and representative data.
 
-The complete installation, real discussion publication and concurrent requests on the target CrazyMax/MySQL environment still require testing. This is an initial alpha, not a stable release.
+The maintainer installed Alpha 1 and confirmed its basic operation. Real publication and concurrent requests on the target CrazyMax/MySQL environment, and the new Alpha 2 editor integrations, still require testing. This is an initial alpha, not a stable release.
 
 ```bash
 cd js
@@ -96,14 +96,14 @@ The backend tests require `pdo_sqlite` and `mbstring` in the test PHP runtime. T
 
 Editorial ist ein privater Redaktionsbereich für Flarum 2. Lade Mitglieder ein, speichere Textrevisionen, sammle interne Rückmeldungen und veröffentliche ein freigegebenes Manuskript als normale Diskussion.
 
-**Paket:** `el-choco/editorial` · **Version:** `0.1.0-alpha.1` · **Lizenz:** MIT
+**Paket:** `el-choco/editorial` · **Version:** `0.1.0-alpha.2` · **Lizenz:** MIT
 
 ## Funktionen
 
 - Eigener Redaktionsbereich unter `/editorial` mit berechtigungsabhängigem Sidebar-Link.
 - Private Entwürfe mit Eigentümer, Bearbeitern und Prüfern.
-- Einladungen über bestehende Benutzernamen. Eingeladene Entwürfe erscheinen im Redaktionsbereich der Beteiligten.
-- Texteditor mit einfachen Markdown-Werkzeugen und Kategorieauswahl, wenn Flarum Tags vorhanden ist.
+- Einladungen über bestehende Benutzernamen mit Vorschlägen ab drei Zeichen. Eingeladene Entwürfe erscheinen im Redaktionsbereich der Beteiligten.
+- Flarums nativer TextEditor mit Symbol-Werkzeugleiste der aktiven Erweiterungen und eigenem Composer-Zustand. Eine höhere Kategorieauswahl steht bei aktiviertem Flarum Tags bereit.
 - Bewusstes Speichern als neue Textrevision. Ältere Stände lassen sich lesen und als neue Revision wiederherstellen.
 - Interne Textkommentare mit Bezug zur jeweiligen Textrevision.
 - Eine bis fünf erforderliche Freigaben, im Adminbereich für neue Entwürfe einstellbar.
@@ -155,7 +155,7 @@ Grenzen: 50 aktive Entwürfe pro Eigentümer, 20 eingeladene Mitglieder pro Entw
 ## Umfang der ersten Version
 
 - Gespeicherte Revisionen und manuelles Zusammenführen bei Konflikten; keine Live-Cursor oder automatische Zusammenführung gleichzeitiger Texteingaben.
-- Eigener Texteditor. Vorhandenes Foren-Markup bleibt erhalten; FoF Rich Text, FoF Upload und die normale Composer-Werkzeugleiste sind hier nicht eingebettet.
+- Flarums nativer TextEditor verwendet seine normalen Erweiterungspunkte für Editor-Werkzeuge. Werkzeuge, die den globalen Composer oder einen bestimmten Diskussions-Composer voraussetzen, können eine zusätzliche Anbindung benötigen. Die installierte Kombination aus Rich Text, Upload und MagicBB muss noch im Ziel-Forum geprüft werden. Hochgeladene Medien unterliegen den Sichtbarkeitseinstellungen der Upload-Erweiterung; ein privates Manuskript macht Upload-Dateien nicht automatisch privat.
 - Kein automatisches Speichern, keine Einladungs-E-Mails, Benachrichtigungen über ungelesene Entwürfe, verankerten Kommentarthreads, Eigentümerwechsel oder zeitgesteuerten Veröffentlichungen.
 - Archive sind schreibgeschützt. Eine Wiederöffnung archivierter Entwürfe gibt es in dieser Version nicht.
 - Flarum prüft Kategorien und Veröffentlichungsrechte beim Veröffentlichen. Erweiterungen mit zusätzlichen verpflichtenden Diskussionsfeldern können eine spätere Editorial-Anbindung benötigen.
@@ -163,6 +163,8 @@ Grenzen: 50 aktive Entwürfe pro Eigentümer, 20 eingeladene Mitglieder pro Entw
 
 ## Prüfung
 
-Die Backend-Prüfungen verwenden echte Klassen aus Flarum 2.0.2, die Migrationen, Datenbankabfragen und eine isolierte SQLite-Datenbank. Sie prüfen Rollen, Privatsphäre, Statuswechsel, Wiederherstellen, veraltete Speicherstände, entzogene Prüferrechte, Rückabwicklung und Schutz vor doppelter Veröffentlichung. Der Veröffentlichungsadapter wird mit Flarums echtem API-Client und einer kontrollierten Antwort geprüft. Browserprüfungen verwenden den gebauten Frontend-Code mit Beispieldaten.
+Die Backend-Prüfungen verwenden echte Klassen aus Flarum 2.0.2, die Migrationen, Datenbankabfragen und eine isolierte SQLite-Datenbank. Sie prüfen Rollen, Privatsphäre, Statuswechsel, Wiederherstellen, veraltete Speicherstände, entzogene Prüferrechte, Rückabwicklung und Schutz vor doppelter Veröffentlichung. Der Veröffentlichungsadapter wird mit Flarums echtem API-Client und einer kontrollierten Antwort geprüft. Browserprüfungen verwenden den gebauten Frontend-Code, Flarums echte TextEditor-/BasicEditorDriver-Klassen und Beispieldaten.
 
-Die vollständige Installation, echte Veröffentlichung und parallele Zugriffe im CrazyMax-/MySQL-Zielsystem müssen noch praktisch geprüft werden. Dies ist eine erste Alpha-Version.
+Der Betreiber hat Alpha 1 installiert und den grundsätzlichen Betrieb bestätigt. Echte Veröffentlichung, parallele Zugriffe im CrazyMax-/MySQL-Zielsystem und die neuen Editor-Anbindungen von Alpha 2 müssen noch praktisch geprüft werden. Dies ist eine erste Alpha-Version.
+
+[Update from Alpha 1 / Update von Alpha 1](UPDATE-DE.md)

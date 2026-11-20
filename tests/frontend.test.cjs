@@ -7,7 +7,7 @@ const root = path.resolve(__dirname, '..');
 const mithril = require(path.join(root, 'js/node_modules/mithril'));
 
 const fixture = {
-  version: '0.1.0-alpha.1', draft: { id: 7, owner_id: 1, title: 'A useful guide', content: 'Saved text', tags: [1],
+  version: '0.1.0-alpha.2', draft: { id: 7, owner_id: 1, title: 'A useful guide', content: 'Saved text', tags: [1],
     status: 'draft', version: 4, content_version: 2, required_approvals: 1, updated_at: '2026-11-18 10:00:00', discussion_id: null },
   role: 'owner', canEdit: true, canApprove: false, canPublish: false, approvals: 0,
   members: [{ user_id: 2, role: 'reviewer', approved_version: null }], users: { 1: 'Owner', 2: 'Reviewer' }, history: [], comments: [],
@@ -25,16 +25,18 @@ function setup() {
     request: async (options) => { calls.push(options); return structuredClone(fixture); },
   };
   class Page { oninit(vnode) { this.attrs = vnode.attrs; } onremove() {} }
+  class TextEditor { buildEditorParams() { return { classNames: [] }; } onremove() {} }
+  class ComposerState { constructor() { let content = ''; this.fields = { content: (...args) => args.length ? content = args[0] : content }; } }
   class Routes { add() { return this; } }
   class Link { view(vnode) { return mithril('a', vnode.attrs, vnode.children); } }
   class Sidebar {}
   const core = { 'forum/app': app, 'common/components/Page': Page, 'common/components/Link': Link,
-    'common/components/LinkButton': Link, 'common/components/LoadingIndicator': Link,
+    'common/components/LinkButton': Link, 'common/components/LoadingIndicator': Link, 'common/components/TextEditor': TextEditor, 'forum/states/ComposerState': ComposerState,
     'common/extenders/Routes': Routes, 'common/extend': { extend: () => {} }, 'forum/components/IndexSidebar': Sidebar };
   const m = (...args) => mithril(...args); m.redraw = () => {}; m.redraw.sync = () => {};
   m.route = { param: () => '7', set: (value) => navigations.push(value) };
   const window = { addEventListener: (name, handler) => listeners.set(name, handler), removeEventListener: (name) => listeners.delete(name), confirm: () => confirmResult };
-  const context = { m, window, Blob, URL, setTimeout, console, module: { exports: {} }, flarum: { reg: { get: (_, name) => core[name], add: (_, name, value) => { modules[name] = value; } } } };
+  const context = { m, window, Blob, URL, setTimeout, clearTimeout, console, module: { exports: {} }, flarum: { reg: { get: (_, name) => core[name], add: (_, name, value) => { modules[name] = value; } } } };
   runInNewContext(readFileSync(path.join(root, 'js/dist/forum.js'), 'utf8'), context);
   const page = new modules.forum.EditorialDraft();
   page.oninit({ attrs: { id: '7' } });
@@ -139,4 +141,47 @@ test('text is rendered as text nodes and editorial styles are scoped', () => {
   const source = readFileSync(path.join(root, 'js/src/forum.js'), 'utf8');
   assert.doesNotMatch(source, /m\.trust|innerHTML|localStorage|sessionStorage/);
   assert.match(readFileSync(path.join(root, 'less/forum.less'), 'utf8'), /^\.Editorial\s*\{/);
+});
+
+test('member lookup starts after three characters and selects exact usernames', async () => {
+  const { page, app } = setup(); await tick();
+  const found = { id: () => '2', username: () => 'marcus', displayName: () => 'Marcus' };
+  let lookups = 0;
+  app.store.find = async (type, query) => { lookups++; assert.equal(type, 'users'); assert.equal(query.filter.q, 'mar'); return [found]; };
+  page.searchMembers('ma');
+  await new Promise((resolve) => setTimeout(resolve, 280));
+  assert.equal(lookups, 0);
+  page.searchMembers('mar');
+  await new Promise((resolve) => setTimeout(resolve, 280));
+  assert.equal(lookups, 1);
+  assert.equal(page.suggestions[0].username(), 'marcus');
+  let prevented = false;
+  page.memberKey({ key: 'Enter', preventDefault: () => { prevented = true; } });
+  assert.equal(prevented, true);
+  assert.equal(page.username, 'marcus');
+  assert.equal(page.suggestions.length, 0);
+});
+
+test('outdated member searches cannot replace newer results', async () => {
+  const { page, app } = setup(); await tick();
+  let finishOld;
+  app.store.find = () => new Promise((resolve) => { finishOld = resolve; });
+  page.searchMembers('old');
+  await new Promise((resolve) => setTimeout(resolve, 280));
+  page.searchMembers('ne');
+  finishOld([{ id: () => '2', username: () => 'old-user' }]);
+  await tick();
+  assert.equal(page.suggestions.length, 0);
+  assert.equal(page.username, 'ne');
+});
+
+test('native editor inherits core tools and remains isolated from the global composer', async () => {
+  const { page, modules, app } = setup(); await tick();
+  assert.equal(app.composer, undefined);
+  assert.equal(page.composer.fields.content(), 'Saved text');
+  const editor = new modules.forum.EditorialTextEditor();
+  assert.equal(editor.buildEditorParams().classNames.includes('Editorial-content'), true);
+  const source = readFileSync(path.join(root, 'js/src/forum.js'), 'utf8');
+  assert.match(source, /extends TextEditor/);
+  assert.doesNotMatch(source, /toolbarItems\(\)/);
 });

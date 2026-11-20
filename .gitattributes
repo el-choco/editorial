@@ -6,3 +6,5 @@
 /js/node_modules export-ignore
 /INSTALL-DE.md export-ignore
 /INSTALL-EN.md export-ignore
+/UPDATE-DE.md export-ignore
+/UPDATE-EN.md export-ignore
