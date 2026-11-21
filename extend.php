@@ -23,6 +23,10 @@ return [
         ->get('/editorial/{id}', 'editorial.show', Controller::class)
         ->post('/editorial/{id}', 'editorial.action', Controller::class)
         ->get('/editorial/{id}/revisions/{revision}', 'editorial.revision', Controller::class),
-    (new Extend\Settings())->default('el-choco-editorial.approvals', '1'),
+    (new Extend\Settings())->default('el-choco-editorial.approvals', '1')
+        ->default('el-choco-editorial.home_banner', '1')
+        ->default('el-choco-editorial.home_layout', 'cards')
+        ->default('el-choco-editorial.home_sort', 'latest')
+        ->default('el-choco-editorial.home_status', 'all'),
     new Extend\Locales(__DIR__.'/locale'),
 ];

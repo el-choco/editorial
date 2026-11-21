@@ -93,6 +93,25 @@
   .Editorial-nativeEditor .TextEditor-toolbar { margin-left: auto; display: flex; flex-wrap: wrap; gap: 4px; }
   .Editorial-nativeEditor .TextEditor-controls .App-primaryControl { display: none; }
   .Editorial-nativeEditor .Button--icon { min-width: 36px; min-height: 36px; padding: 8px; }
+  .Editorial-welcome { margin-bottom: 24px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; }
+  .Editorial-grid.Editorial-grid--list { grid-template-columns: minmax(0, 1fr); }
+  .Editorial-grid--list .Editorial-draftCard { padding: 18px 24px; }
+  .Editorial-homeFilters { display: flex; flex-wrap: wrap; gap: 16px; margin: 0 0 20px; }
+  .Editorial-homeFilters label { margin: 0; min-width: 180px; }
+  .Editorial-homeFilters select { margin-top: 7px; }
+  .Editorial-directApproval { padding: 12px; border-radius: 10px; background: #e4f5ec; color: #245f49; font-weight: 650; }
+  .Editorial-directApproval small { display: block; color: inherit; margin-top: 4px; }
+  .Editorial-diff { max-height: 520px; overflow: auto; border: 1px solid var(--muted-color); border-radius: 9px; margin: 12px 0; }
+  .Editorial-diffRow { display: grid; grid-template-columns: 36px 36px 22px minmax(0, 1fr); font: 12px/1.7 monospace; padding: 3px 6px; }
+  .Editorial-diffRow > span { opacity: .65; user-select: none; text-align: right; padding-right: 6px; }
+  .Editorial-diffRow > b { text-align: center; }
+  .Editorial-diffRow > code { color: inherit; background: transparent; white-space: pre-wrap; overflow-wrap: anywhere; padding: 0; }
+  .Editorial-diffRow[data-kind=delete] { background: #fde4e4; color: #852525; }
+  .Editorial-diffRow[data-kind=add] { background: #dff3e6; color: #185b35; }
+  .Editorial-diffSkip { padding: 8px; background: var(--control-bg); color: var(--muted-color); font-size: 12px; }
+  .Editorial-diffMeta { overflow-wrap: anywhere; }
+  .Editorial-diffMeta del { color: #a62f2f; }
+  .Editorial-diffMeta ins { color: #247459; }
   @media (max-width: 991px) {
     .Editorial-workspace { grid-template-columns: minmax(0, 1fr); }
     .Editorial-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }

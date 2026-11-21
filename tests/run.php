@@ -54,11 +54,20 @@ $schema->create('discussions', function (Blueprint $table): void { $table->incre
 for ($i = 1; $i <= 7; $i++) $db->table('users')->insert(['id' => $i, 'username' => 'user'.$i]);
 $migration = require dirname(__DIR__).'/migrations/2026_11_18_000000_create_editorial_tables.php';
 $migration['up']($schema);
+$upgradeId = $db->table('editorial_drafts')->insertGetId(['owner_id' => 1, 'title' => 'Existing 1.0.0 draft', 'content' => 'Keep this manuscript', 'tags' => '[]',
+    'status' => 'draft', 'version' => 1, 'content_version' => 1, 'required_approvals' => 2, 'created_at' => gmdate('Y-m-d H:i:s'), 'updated_at' => gmdate('Y-m-d H:i:s')]);
+$approvalMigration = require dirname(__DIR__).'/migrations/2026_11_21_000000_add_direct_approval.php';
+$approvalMigration['up']($schema);
+check($db->table('editorial_drafts')->where('id', $upgradeId)->value('content') === 'Keep this manuscript', 'Upgrade preserves existing 1.0.0 manuscript');
+check($db->table('editorial_drafts')->where('id', $upgradeId)->value('direct_approved_by') === null, 'Existing manuscript does not acquire direct approval');
+$db->table('editorial_drafts')->where('id', $upgradeId)->delete();
 check($schema->hasTable('editorial_drafts'), 'Migration respects table prefix');
 
 $gate = new class(new Container(), []) extends Gate {
     public array $revoked = [];
+    public array $directUsers = [];
     public function allows(User $actor, string $ability, string|\Flarum\Database\AbstractModel|null $model): bool {
+        if ($ability === 'el-choco-editorial.approveDirectly') return in_array((int) $actor->id, $this->directUsers, true);
         return $ability === 'el-choco-editorial.use' ? !in_array((int) $actor->id, array_merge([7], $this->revoked), true) : ($ability === 'el-choco-editorial.manage' && (int) $actor->id === 6);
     }
 };
@@ -120,6 +129,11 @@ rejects(fn () => $service->mutate($editor, $id, ['action' => 'save', 'version' =
 check($service->detail($owner, $id)['draft']->content === 'First version', 'Stale save does not overwrite text');
 $saved = $act($editor, 'save', ['title' => 'Team guide edited', 'content' => 'Edited version', 'tags' => [2]]);
 check((int) $saved['draft']->content_version === 2, 'Editor creates text revision');
+$savedRevisionId = $db->table('editorial_revisions')->where('draft_id', $id)->where('action', 'save')->value('id');
+$comparison = $service->revision($reviewer, $id, $savedRevisionId);
+check($comparison['previous']->content === 'First version', 'Comparison uses preceding text snapshot, skipping comments and invitations');
+check($comparison['previous']->tags === [1, 2] && $comparison['revision']->tags === [2], 'Comparison includes old and new categories');
+if (isset($argv[2])) file_put_contents($argv[2].'.comparison.json', json_encode($comparison, JSON_THROW_ON_ERROR));
 $firstRevision = $db->table('editorial_revisions')->where('draft_id', $id)->where('action', 'create')->value('id');
 check($service->revision($reviewer, $id, $firstRevision)['revision']->content === 'First version', 'Team can inspect old snapshot');
 $restored = $act($editor, 'restore', ['revision' => $firstRevision]);
@@ -176,6 +190,70 @@ check($response->getStatusCode() === 422, 'Malformed pagination rejected');
 $service->mutate($owner, $nextId, ['action' => 'archive', 'version' => 3], $request);
 rejects(fn () => $service->mutate($owner, $nextId, ['action' => 'save', 'version' => 4, 'title' => 'Archived edit', 'content' => 'No'], $request), 'closed');
 
+$settings->set('el-choco-editorial.approvals', '2');
+$direct = $service->create($owner, ['title' => 'Direct approval manuscript', 'content' => 'Direct text']);
+$directId = (int) $direct['draft']->id;
+$directAction = function (User $actor, string $action, array $input = []) use ($service, $directId, $request): array {
+    $version = (int) $service->detail($actor, $directId)['draft']->version;
+    return $service->mutate($actor, $directId, ['action' => $action, 'version' => $version] + $input, RequestUtil::withActor($request, $actor));
+};
+forbidden(fn () => $directAction($owner, 'approve_directly'));
+$gate->directUsers = [1, 4];
+check($service->detail($owner, $directId)['canApproveDirectly'], 'Explicit group right permits owner direct approval');
+rejects(fn () => $service->detail($stranger, $directId), 'not_found');
+check($service->listing($stranger, 1)['total'] === 0, 'Direct approval right does not grant access to private drafts');
+$direct = $directAction($owner, 'approve_directly');
+check($direct['draft']->status === 'approved' && $direct['approvals'] === 0, 'Direct approval bypasses two-reviewer count without fake reviewer votes');
+check($direct['directApproval']['valid'] && $direct['directApproval']['userId'] === 1 && $direct['canPublish'], 'Direct approval records actor and authorizes owner publication');
+check($direct['history']->first()->action === 'approve_directly', 'Direct approval is visible in history');
+$gate->directUsers = [4];
+check(!$service->detail($owner, $directId)['canPublish'], 'Revoked direct approval no longer authorizes publication');
+rejects(fn () => $directAction($owner, 'publish'), 'reviewers');
+$gate->directUsers = [1];
+$directAction($owner, 'reopen');
+$reopened = $service->detail($owner, $directId);
+check($reopened['directApproval'] === null && !$reopened['canPublish'], 'Reopening clears direct approval');
+$directAction($owner, 'save', ['title' => 'Direct approval edited', 'content' => 'Changed text', 'tags' => []]);
+check($service->detail($owner, $directId)['directApproval'] === null, 'Text changes cannot retain direct approval');
+$oldDirectVersion = (int) $service->detail($owner, $directId)['draft']->version;
+$directAction($owner, 'comment', ['content' => 'A concurrent comment']);
+rejects(fn () => $service->mutate($owner, $directId, ['action' => 'approve_directly', 'version' => $oldDirectVersion], $request), 'conflict');
+$gate->directUsers = [6];
+forbidden(fn () => $directAction($owner, 'approve_directly'));
+$direct = $directAction($manager, 'approve_directly');
+check($direct['directApproval']['userId'] === 6, 'Authorised manager can directly approve an accessible draft');
+forbidden(fn () => $directAction($manager, 'publish'));
+$gate->revoked = [6];
+rejects(fn () => $directAction($owner, 'publish'), 'reviewers');
+$gate->revoked = [];
+check($directAction($owner, 'publish')['draft']->status === 'published', 'Owner publishes draft approved by authorised manager');
+$gate->directUsers = [];
+$empty = $service->create($owner, ['title' => 'Empty direct draft', 'content' => '']);
+$gate->directUsers = [1];
+check(!$empty['canApproveDirectly'], 'Empty draft does not offer direct approval');
+rejects(fn () => $service->mutate($owner, (int) $empty['draft']->id, ['action' => 'approve_directly', 'version' => 1], $request), 'state');
+rejects(fn () => $service->revision($owner, $directId, $savedRevisionId), 'not_found');
+$gate->directUsers = [];
+
+$settings->set('el-choco-editorial.home_title', 'Our editorial desk');
+$settings->set('el-choco-editorial.home_description', '<script>not executed</script>');
+$settings->set('el-choco-editorial.home_welcome', 'Team instructions');
+$settings->set('el-choco-editorial.home_banner', '0');
+$settings->set('el-choco-editorial.home_layout', 'list');
+$settings->set('el-choco-editorial.home_status', 'archived');
+$settings->set('el-choco-editorial.home_sort', 'title');
+$home = $service->listing($owner, 1);
+check($home['home']['title'] === 'Our editorial desk' && !$home['home']['banner'] && $home['home']['layout'] === 'list', 'Homepage settings reach the API');
+check($home['status'] === 'archived' && $home['sort'] === 'title' && $home['items']->every(fn ($row) => $row->status === 'archived'), 'Default homepage filter applies before pagination');
+$filtered = $service->listing($owner, 1, 'published', 'latest');
+check($filtered['total'] === 1 && $filtered['items']->first()->id == $directId, 'Member can override default filter within own access scope');
+rejects(fn () => $service->listing($owner, 1, 'private'), 'invalid');
+rejects(fn () => $service->listing($owner, 1, 'all', 'title; DROP TABLE users'), 'invalid');
+$response = $controller->handle($request->withQueryParams(['status' => []]));
+check($response->getStatusCode() === 422, 'Malformed status filter rejected');
+$settings->set('el-choco-editorial.home_title', str_repeat('x', 300));
+check(mb_strlen($service->listing($owner, 1)['home']['title']) === 120, 'Homepage text is bounded');
+
 $container = new Container();
 $capture = new class implements \Psr\Http\Server\MiddlewareInterface {
     public ?ServerRequestInterface $request = null;
@@ -196,6 +274,7 @@ check($capture->request->getParsedBody()['data']['attributes']['content'] === '*
 foreach (require dirname(__DIR__).'/extend.php' as $extender) {
     check($extender instanceof \Flarum\Extend\ExtenderInterface, 'Extension registers a real Flarum 2 extender');
 }
+$approvalMigration['down']($schema);
 $migration['down']($schema);
 check(!$schema->hasTable('editorial_drafts'), 'Purge migration removes editorial tables');
 echo $checks." checks passed with real Flarum 2 dependencies and an isolated SQLite database.\n";

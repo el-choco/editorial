@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.1 — 2026-11-21
+
+- Add administrator-configurable homepage banner, texts, cards/list layout, default status filter and sorting.
+- Compare saved text revisions with red/green line diffs, title and category changes, bounded rendering and full-text views.
+- Add a separate direct-approval group permission that can bypass reviewer counts on accessible drafts, including own drafts.
+- Record direct approvals in history, clear them on edits/reopening and recheck the approver’s current permissions before publishing.
+- Add a non-destructive migration for revision-bound direct approvals and update English/German documentation.
+
 ## 1.0.0 — 2026-11-20
 
 - Publish the tested collaborative drafting and review workflow as the first stable release.

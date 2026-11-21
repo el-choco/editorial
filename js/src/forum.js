@@ -8,6 +8,9 @@ import ComposerState from 'flarum/forum/states/ComposerState';
 import Routes from 'flarum/common/extenders/Routes';
 import { extend as extendMethod } from 'flarum/common/extend';
 import IndexSidebar from 'flarum/forum/components/IndexSidebar';
+import { lineDiff } from './lineDiff';
+
+export { lineDiff };
 
 const tr = (key, values = {}) => app.translator.trans('el-choco-editorial.forum.' + key, values);
 const txt = (key, values = {}) => { const value = tr(key, values); return Array.isArray(value) ? value.join('') : String(value); };
@@ -53,6 +56,9 @@ export class EditorialIndex extends Page {
   oninit(vnode) {
     super.oninit(vnode);
     this.page = 1;
+    this.filter = null;
+    this.sort = null;
+    this.loadRevision = 0;
     this.title = '';
     this.active = true;
     this.load();
@@ -61,13 +67,17 @@ export class EditorialIndex extends Page {
   onremove(vnode) { this.active = false; super.onremove(vnode); }
 
   async load() {
+    const revision = ++this.loadRevision;
     this.loading = true;
     this.error = '';
+    const params = { page: this.page };
+    if (this.filter !== null) params.status = this.filter;
+    if (this.sort !== null) params.sort = this.sort;
     try {
-      const data = await app.request({ url: endpoint(), params: { page: this.page }, errorHandler: () => {} });
-      if (this.active) this.data = data;
-    } catch (error) { if (this.active) this.error = errorCode(error); }
-    finally { if (this.active) { this.loading = false; m.redraw(); } }
+      const data = await app.request({ url: endpoint(), params, errorHandler: () => {} });
+      if (this.active && revision === this.loadRevision) { this.data = data; this.filter = data.status || 'all'; this.sort = data.sort || 'latest'; }
+    } catch (error) { if (this.active && revision === this.loadRevision) this.error = errorCode(error); }
+    finally { if (this.active && revision === this.loadRevision) { this.loading = false; m.redraw(); } }
   }
 
   async create() {
@@ -81,9 +91,11 @@ export class EditorialIndex extends Page {
   }
 
   view() {
+    const home = this.data?.home || {};
     return m('.Editorial', m('.container', [
-      m('header.Editorial-hero', [m('span.Editorial-eyebrow', 'el-choco · Editorial'), m('h1', tr('heading')),
-        m('p', tr('intro')), m('.Editorial-heroMark', { 'aria-hidden': 'true' }, icon('pen-nib'))]),
+      home.banner !== false && m('header.Editorial-hero', [m('span.Editorial-eyebrow', 'el-choco · Editorial'), m('h1', home.title || tr('heading')),
+        m('p', home.description || tr('intro')), m('.Editorial-heroMark', { 'aria-hidden': 'true' }, icon('pen-nib'))]),
+      home.welcome && m('section.Editorial-card.Editorial-welcome', home.welcome),
       !app.session.user ? m('.Editorial-card', tr('access')) : [
         m('form.Editorial-card.Editorial-create', { onsubmit: (event) => { event.preventDefault(); if (!this.busy && this.title.trim().length >= 3) this.create(); } }, [
           m('label', { for: 'editorial-new-title' }, tr('new_title')),
@@ -93,9 +105,15 @@ export class EditorialIndex extends Page {
         ]),
         this.error && m('.Alert.Alert--error', { role: 'alert' }, tr('error_' + this.error)),
         m('.Editorial-toolbar', [m('h2', tr('workspace')), button('refresh', () => this.load(), this.loading)]),
+        this.data && m('.Editorial-homeFilters', [
+          m('label', [tr('filter_status'), m('select.FormControl', { value: this.filter, disabled: this.loading, onchange: (event) => { this.filter = event.target.value; this.page = 1; this.load(); } },
+            ['all', 'draft', 'review', 'approved', 'published', 'archived'].map((state) => m('option', { value: state }, tr('status_' + state))))]),
+          m('label', [tr('sort'), m('select.FormControl', { value: this.sort, disabled: this.loading, onchange: (event) => { this.sort = event.target.value; this.page = 1; this.load(); } },
+            ['latest', 'oldest', 'title'].map((order) => m('option', { value: order }, tr('sort_' + order))))]),
+        ]),
         this.loading ? m(LoadingIndicator) : this.data && [
           !this.data.items.length && m('.Editorial-card.Editorial-empty', [icon('feather'), m('h3', tr('empty')), m('p', tr('empty_help'))]),
-          m('.Editorial-grid', this.data.items.map((draft) => m(Link, { href: app.route('editorial.draft', { id: draft.id }), className: 'Editorial-card Editorial-draftCard' }, [
+          m('.Editorial-grid', { className: home.layout === 'list' ? 'Editorial-grid--list' : '' }, this.data.items.map((draft) => m(Link, { href: app.route('editorial.draft', { id: draft.id }), className: 'Editorial-card Editorial-draftCard' }, [
             status(draft.status), m('h3', draft.title), m('p', tr('revision_label', { number: draft.content_version })), m('small', date(draft.updated_at)), icon('arrow-right'),
           ]))),
           m('.Editorial-pagination', [button('previous', () => { this.page--; this.load(); }, this.page === 1), m('span', String(this.page)),
@@ -155,6 +173,8 @@ export class EditorialDraft extends Page {
     this.editorKey++;
     this.composer.fields.content(this.content);
     this.snapshot = null;
+    this.previousSnapshot = null;
+    this.comparison = null;
   }
 
   async load(confirm = false) {
@@ -185,7 +205,7 @@ export class EditorialDraft extends Page {
   async action(action, extra = {}) {
     if (this.busy || !this.data) return;
     if (action !== 'save' && this.dirty()) { this.error = 'unsaved'; return; }
-    if (['publish', 'delete', 'restore', 'archive'].includes(action) && !window.confirm(txt('confirm_' + action))) return;
+    if (['publish', 'delete', 'restore', 'archive', 'approve_directly'].includes(action) && !window.confirm(txt('confirm_' + action))) return;
     this.busy = true;
     this.error = '';
     try {
@@ -207,11 +227,15 @@ export class EditorialDraft extends Page {
   }
 
   async showRevision(id) {
+    const request = this.revisionRequest = (this.revisionRequest || 0) + 1;
     this.error = '';
     try {
       const data = await app.request({ url: endpoint('/' + this.id + '/revisions/' + id), errorHandler: () => {} });
-      if (this.active) this.snapshot = data.revision;
-    } catch (error) { if (this.active) this.error = errorCode(error); }
+      if (this.active && request === this.revisionRequest) {
+        this.snapshot = data.revision; this.previousSnapshot = data.previous || null; this.revisionView = 'diff';
+        this.comparison = lineDiff(data.previous?.content || '', data.revision.content);
+      }
+    } catch (error) { if (this.active && request === this.revisionRequest) this.error = errorCode(error); }
     finally { if (this.active) m.redraw(); }
   }
 
@@ -330,8 +354,10 @@ export class EditorialDraft extends Page {
         ]),
         m('aside.Editorial-side', [
           m('section.Editorial-card.Editorial-review', [icon('clipboard-check'), m('h2', tr('review_title')),
-            m('strong.Editorial-approvalCount', this.data.approvals + ' / ' + draft.required_approvals), m('p', tr('approval_help')),
+            this.data.directApproval && m('.Editorial-directApproval', [icon('check-double'), ' ', tr(this.data.directApproval.valid ? 'direct_approved' : 'direct_invalid'), m('small', this.user(this.data.directApproval.userId))]),
+            !this.data.directApproval?.valid && m('strong.Editorial-approvalCount', this.data.approvals + ' / ' + draft.required_approvals), m('p', tr(this.data.directApproval?.valid ? 'direct_approval_help' : 'approval_help')),
             m('.Editorial-actions', [owner && draft.status === 'draft' && button('submit', () => this.action('submit'), disabled, true),
+              this.data.canApproveDirectly && button('approve_directly', () => this.action('approve_directly'), disabled, true),
               canApprove && button('approve', () => this.action('approve'), disabled, true),
               owner && ['review', 'approved'].includes(draft.status) && button('reopen', () => this.action('reopen'), disabled),
               canPublish && button('publish', () => this.action('publish'), disabled, true)]),
@@ -378,12 +404,37 @@ export class EditorialDraft extends Page {
     ]);
   }
 
+  revisionPanel(canEdit, disabled) {
+    const snapshot = this.snapshot;
+    const previous = this.previousSnapshot;
+    const comparison = this.comparison;
+    return m('.Editorial-snapshot', [
+      m('h3', [tr('revision_label', { number: snapshot.content_version }), ' · ', snapshot.title]),
+      m('p', previous ? tr('changes_from', { number: previous.content_version }) : tr('initial_revision')),
+      m('.Editorial-tabs', [button('show_diff', () => { this.revisionView = 'diff'; }), button('show_text', () => { this.revisionView = 'text'; })]),
+      this.revisionView === 'text' ? [previous && m('details', [m('summary', tr('previous_text')), m('pre', previous.content)]), m('pre', snapshot.content)] : [
+        previous && previous.title !== snapshot.title && m('p.Editorial-diffMeta', [tr('title'), ': ', m('del', previous.title), ' → ', m('ins', snapshot.title)]),
+        JSON.stringify(previous?.tags || []) !== JSON.stringify(snapshot.tags) && m('p.Editorial-diffMeta', [tr('tag_ids'), ': ', (previous?.tags || []).join(', ') || '—', ' → ', snapshot.tags.join(', ') || '—']),
+        comparison && [
+          m('p', tr('diff_summary', { added: comparison.added, removed: comparison.removed })),
+          !comparison.added && !comparison.removed && m('p', tr('no_text_changes')),
+          comparison.coarse && m('p.Alert', tr('diff_coarse')),
+          comparison.truncated && m('p.Alert', tr('diff_truncated')),
+          m('.Editorial-diff', { role: 'region', 'aria-label': txt('show_diff'), tabindex: 0 }, comparison.rows.map((row) => row.kind === 'skip' ?
+            m('.Editorial-diffSkip', tr('diff_skipped', { count: row.count })) :
+            m('.Editorial-diffRow', { 'data-kind': row.kind }, [m('span', { 'aria-hidden': 'true' }, row.oldLine || ''), m('span', { 'aria-hidden': 'true' }, row.newLine || ''),
+              m('b', row.kind === 'add' ? '+' : row.kind === 'delete' ? '−' : ' '), m('code', row.text || ' ')]))),
+        ],
+      ],
+      m('p', tr('restore_help')),
+      canEdit && button('restore', () => this.action('restore', { revision: Number(snapshot.id) }), disabled),
+    ]);
+  }
+
   history(canEdit, disabled) {
     return m('.Editorial-history', [
       this.data.historyTruncated && m('p.Alert', tr('history_limit')),
-      this.snapshot && m('.Editorial-snapshot', [m('h3', [tr('revision_label', { number: this.snapshot.content_version }), ' · ', this.snapshot.title]),
-        m('pre', this.snapshot.content), m('p', tr('restore_help')),
-        canEdit && button('restore', () => this.action('restore', { revision: Number(this.snapshot.id) }), disabled)]),
+      this.snapshot && this.revisionPanel(canEdit, disabled),
       ...this.data.history.map((item) => m('article.Editorial-event', [
         m('div', [m('strong', tr('action_' + item.action)), m('small', [this.user(item.actor_id), ' · ', date(item.created_at), ' · ', tr('revision_label', { number: item.content_version })]),
           item.detail && m('small', item.detail)]),

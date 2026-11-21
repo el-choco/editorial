@@ -42,7 +42,12 @@ final class Controller implements RequestHandlerInterface
                 if (!$page) {
                     throw new EditorialException('invalid');
                 }
-                $data = $this->drafts->listing($actor, $page);
+                foreach (['status', 'sort'] as $key) {
+                    if (isset($params[$key]) && !is_string($params[$key])) {
+                        throw new EditorialException('invalid');
+                    }
+                }
+                $data = $this->drafts->listing($actor, $page, $params['status'] ?? null, $params['sort'] ?? null);
             }
             return new JsonResponse($data, 200, ['Cache-Control' => 'no-store, private']);
         } catch (EditorialException $error) {

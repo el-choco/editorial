@@ -10,7 +10,7 @@ use Psr\Http\Message\ServerRequestInterface;
 
 final class DraftService
 {
-    public const VERSION = '1.0.0';
+    public const VERSION = '1.0.1';
 
     public function __construct(
         private readonly ConnectionInterface $db,
@@ -37,13 +37,30 @@ final class DraftService
         return $query;
     }
 
-    public function listing(User $actor, int $page): array
+    public function listing(User $actor, int $page, ?string $status = null, ?string $sort = null): array
     {
         $query = $this->query($actor);
+        $home = (new HomeSettings($this->settings))->read();
+        $status ??= $home['status'];
+        $sort ??= $home['sort'];
+        if (!in_array($status, HomeSettings::STATUSES, true) || !in_array($sort, HomeSettings::SORTS, true)) {
+            throw new EditorialException('invalid');
+        }
+        if ($status !== 'all') {
+            $query->where('status', $status);
+        }
         $count = (clone $query)->count();
-        $rows = $query->orderByDesc('updated_at')->orderByDesc('id')->offset(($page - 1) * 20)->limit(20)
+        if ($sort === 'title') {
+            $query->orderBy('title');
+        } elseif ($sort === 'oldest') {
+            $query->orderBy('updated_at');
+        } else {
+            $query->orderByDesc('updated_at');
+        }
+        $rows = $query->orderByDesc('id')->offset(($page - 1) * 20)->limit(20)
             ->get(['id', 'owner_id', 'title', 'status', 'version', 'content_version', 'updated_at', 'discussion_id']);
-        return ['version' => self::VERSION, 'items' => $rows, 'page' => $page, 'hasMore' => $page * 20 < $count, 'total' => $count];
+        return ['version' => self::VERSION, 'items' => $rows, 'page' => $page, 'hasMore' => $page * 20 < $count,
+            'total' => $count, 'home' => $home, 'status' => $status, 'sort' => $sort];
     }
 
     private function find(User $actor, int $id, bool $lock = false): object
@@ -72,17 +89,22 @@ final class DraftService
         $history = $this->db->table('editorial_revisions')->where('draft_id', $id)->orderByDesc('version')->limit(100)
             ->get(['id', 'actor_id', 'version', 'content_version', 'action', 'detail', 'created_at']);
         $comments = $this->db->table('editorial_comments')->where('draft_id', $id)->orderByDesc('id')->limit(100)->get()->reverse()->values();
-        $ids = array_merge([(int) $draft->owner_id], $members->pluck('user_id')->all(), $history->pluck('actor_id')->all(), $comments->pluck('user_id')->all());
+        $ids = array_merge([(int) $draft->owner_id, (int) $draft->direct_approved_by], $members->pluck('user_id')->all(), $history->pluck('actor_id')->all(), $comments->pluck('user_id')->all());
         $users = $this->db->table('users')->whereIn('id', array_unique($ids))->pluck('username', 'id')->all();
         $approvals = $members->filter(fn ($member) => $member->role === 'reviewer' && (int) $member->approved_version === (int) $draft->content_version)->count();
+        $directValid = $this->directApprovalValid($draft);
         $draft->tags = json_decode($draft->tags, true, 16, JSON_THROW_ON_ERROR);
         return ['version' => self::VERSION, 'draft' => $draft, 'role' => $role, 'members' => $members,
             'history' => $history, 'historyTruncated' => (int) $draft->version > 100,
             'comments' => $comments, 'commentsTruncated' => $this->db->table('editorial_comments')->where('draft_id', $id)->count() > 100,
             'users' => $users, 'approvals' => $approvals,
+            'directApproval' => $draft->direct_approved_by ? ['userId' => (int) $draft->direct_approved_by,
+                'revision' => (int) $draft->direct_approved_version, 'valid' => $directValid] : null,
+            'canApproveDirectly' => $actor->can('el-choco-editorial.approveDirectly') && !$directValid
+                && in_array($draft->status, ['draft', 'review', 'approved'], true) && trim($draft->content) !== '',
             'canEdit' => in_array($role, ['owner', 'editor'], true) && $draft->status === 'draft',
             'canApprove' => $role === 'reviewer' && $draft->status === 'review',
-            'canPublish' => $role === 'owner' && $draft->status === 'approved' && $approvals >= $draft->required_approvals];
+            'canPublish' => $role === 'owner' && $draft->status === 'approved' && ($directValid || $approvals >= $draft->required_approvals)];
     }
 
     public function revision(User $actor, int $id, int $revision): array
@@ -93,7 +115,12 @@ final class DraftService
             throw new EditorialException('not_found', 404);
         }
         $row->tags = json_decode($row->tags, true, 16, JSON_THROW_ON_ERROR);
-        return ['revision' => $row];
+        $previous = $this->db->table('editorial_revisions')->where('draft_id', $id)->where('version', '<', $row->version)
+            ->whereNotNull('content')->orderByDesc('version')->first();
+        if ($previous) {
+            $previous->tags = json_decode($previous->tags, true, 16, JSON_THROW_ON_ERROR);
+        }
+        return ['revision' => $row, 'previous' => $previous];
     }
 
     private function text(array $input, string $key, int $min, int $max): string
@@ -152,9 +179,20 @@ final class DraftService
         ]);
     }
 
-    private function resetApprovals(int $id): void
+    private function resetApprovals(object $draft): void
     {
-        $this->db->table('editorial_members')->where('draft_id', $id)->update(['approved_version' => null]);
+        $this->db->table('editorial_members')->where('draft_id', $draft->id)->update(['approved_version' => null]);
+        $draft->direct_approved_by = null;
+        $draft->direct_approved_version = null;
+    }
+
+    private function directApprovalValid(object $draft): bool
+    {
+        if (!$draft->direct_approved_by || (int) $draft->direct_approved_version !== (int) $draft->content_version) {
+            return false;
+        }
+        $user = User::find($draft->direct_approved_by);
+        return $user && $user->can('el-choco-editorial.use') && $user->can('el-choco-editorial.approveDirectly');
     }
 
     public function mutate(User $actor, int $id, array $input, ServerRequestInterface $request): array
@@ -198,7 +236,7 @@ final class DraftService
                     $draft->$key = $value;
                 }
                 $draft->content_version++;
-                $this->resetApprovals($id);
+                $this->resetApprovals($draft);
                 $snapshot = true;
             } elseif ($action === 'invite' || $action === 'remove') {
                 $actor->assertPermission($owner);
@@ -228,7 +266,7 @@ final class DraftService
                     $this->db->table('editorial_members')->where('draft_id', $id)->where('user_id', $userId)->delete();
                     $detail = (string) $userId;
                 }
-                $this->resetApprovals($id);
+                $this->resetApprovals($draft);
             } elseif ($action === 'submit') {
                 $actor->assertPermission($owner);
                 if ($draft->status !== 'draft' || trim($draft->content) === '') {
@@ -243,7 +281,7 @@ final class DraftService
                 if ($eligible < $draft->required_approvals) {
                     throw new EditorialException('reviewers');
                 }
-                $this->resetApprovals($id);
+                $this->resetApprovals($draft);
                 $draft->status = 'review';
             } elseif ($action === 'reopen' || $action === 'changes') {
                 $actor->assertPermission($action === 'reopen' ? $owner : $role === 'reviewer');
@@ -253,8 +291,16 @@ final class DraftService
                 if ($action === 'changes') {
                     $this->comment($draft, $actor, $this->text($input, 'content', 1, 5000));
                 }
-                $this->resetApprovals($id);
+                $this->resetApprovals($draft);
                 $draft->status = 'draft';
+            } elseif ($action === 'approve_directly') {
+                $actor->assertCan('el-choco-editorial.approveDirectly');
+                if (!in_array($draft->status, ['draft', 'review', 'approved'], true) || trim($draft->content) === '') {
+                    throw new EditorialException('state', 409);
+                }
+                $draft->direct_approved_by = $actor->id;
+                $draft->direct_approved_version = $draft->content_version;
+                $draft->status = 'approved';
             } elseif ($action === 'approve') {
                 $actor->assertPermission($role === 'reviewer');
                 if ($draft->status !== 'review') {
@@ -278,7 +324,7 @@ final class DraftService
                     $user = User::find($userId);
                     $eligible += $user && $user->can('el-choco-editorial.use') ? 1 : 0;
                 }
-                if ($eligible < $draft->required_approvals) {
+                if (!$this->directApprovalValid($draft) && $eligible < $draft->required_approvals) {
                     throw new EditorialException('reviewers');
                 }
                 $draft->discussion_id = $this->publisher->publish($actor, $draft, $request);
@@ -286,7 +332,7 @@ final class DraftService
             } elseif ($action === 'archive') {
                 $actor->assertPermission($owner || $actor->can('el-choco-editorial.manage'));
                 $draft->status = 'archived';
-                $this->resetApprovals($id);
+                $this->resetApprovals($draft);
             } else {
                 throw new EditorialException('invalid');
             }

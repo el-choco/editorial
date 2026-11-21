@@ -4,19 +4,19 @@
 
 Editorial is a private collaborative writing workspace for Flarum 2. Invite other members, keep saved revisions, discuss changes internally and publish an approved manuscript as a normal forum discussion.
 
-**Package:** `el-choco/editorial` · **Version:** `1.0.0` · **License:** MIT
+**Package:** `el-choco/editorial` · **Version:** `1.0.1` · **License:** MIT
 
 ## Features
 
-- A dedicated `/editorial` workspace with a permission-controlled sidebar link.
+- A dedicated `/editorial` workspace with a permission-controlled sidebar link and an admin-configurable homepage: banner, title, description, welcome text, cards/list layout, default status filter and sorting.
 - Private drafts with three roles: owner, editor and reviewer.
 - Invitations by existing username, with suggestions after three characters; invited drafts appear in each participant's workspace.
 - Flarum’s native TextEditor with its extension-provided icon toolbar and an isolated composer state. A larger category list is available when Flarum Tags is enabled.
-- Explicit saves with permanent text snapshots. Older text revisions can be read and restored as new revisions.
+- Explicit saves with permanent text snapshots. Compare each text revision with its preceding snapshot using red/green line changes, title changes and category IDs. Read complete texts and restore an older snapshot as a new revision.
 - Internal plain-text feedback tied to the text revision being discussed.
 - One to five approvals, configured in the administration panel and captured when a draft is created.
 - Workflow: **Draft → In review → Approved → Published**.
-- Review freezes the text. Requesting changes or returning to editing clears approvals. An owner cannot approve their own manuscript.
+- Review freezes the text. Requesting changes or returning to editing clears approvals. Normal owners cannot approve their own manuscript; a separate direct-approval group permission can override the reviewer count, including on own drafts.
 - Publication through Flarum's standard discussion API as the owner, preserving normal permission, validation, formatting and extension checks.
 - Version checks reject stale writes. Conflicting text remains in the editor for downloading and manual merging.
 - Unsaved text is retained in memory when navigating within the same application tab. Closing or reloading the tab warns about unsaved text. No draft text is written to browser storage.
@@ -27,13 +27,13 @@ Editorial is a private collaborative writing workspace for Flarum 2. Invite othe
 
 Flarum `^2.0.2`, PHP `^8.3` and Flarum's configured database. Flarum 1.8 is not supported by this version. FoF Drafts and Admin Console are not dependencies.
 
-The release is supplied as an installable ZIP. Follow [the English installation guide](INSTALL-EN.md) or [the German installation guide](INSTALL-DE.md). Both use `/tmp` for the transferred ZIP and a persistent source directory for Composer. Built JavaScript is included; Node.js is unnecessary on the forum server.
+Install from Packagist using the commands below. Compiled JavaScript is included; Node.js is unnecessary on the forum server. Separate local ZIP installation guides use `/tmp` for transfers and persistent source directories for Composer.
 
 Enabling the extension creates four database tables. No worker, scheduler, external service or API key is required.
 
 ## Installation through Packagist
 
-Once this release has been submitted to Packagist, run the following as the forum filesystem user inside the Flarum directory (inside the container for Docker):
+After version 1.0.1 has been published on Packagist, run the following as the forum filesystem user inside the Flarum directory (inside the container for Docker):
 
 ```bash
 composer require el-choco/editorial:"^1.0" --update-no-dev --minimal-changes --no-scripts --no-interaction
@@ -44,13 +44,37 @@ php flarum cache:clear --force
 
 With CrazyMax, run `extension sync` after the successful Composer operation and before the Flarum commands. `"^1.0"` permits future 1.x updates; `"*"` also permits future major versions, subject to Composer stability settings. Exact version requirements remain pinned. For a move from a local path installation to Packagist, remove the old path repository entry from its project or global configuration and replace the pinned requirement with `"^1.0"`.
 
+## Updating to 1.0.1
+
+After the release is available on Packagist:
+
+```bash
+composer update el-choco/editorial
+php flarum migrate
+php flarum cache:clear
+```
+
+Run these as the forum filesystem user in the forum directory. With CrazyMax, run `extension sync` after the successful Composer operation, before the Flarum commands. If pinned to `1.0.0`, first use `composer require el-choco/editorial:"^1.0"` instead of `composer update`. This release requires a new migration adding two nullable columns for direct approvals. Existing drafts are preserved. Back up the database and Composer files before updating. Clear browser caches afterwards; reload PHP-FPM if OPcache keeps old code.
+
 ## Permissions and administration
 
 Grant **Use Editorial and participate in invited drafts** to the groups that should use the workspace. Invitees also need this permission. Administrators have access through Flarum's normal permission system.
 
 The separate **Read every private draft, comment, archive and permanently delete drafts** permission grants access to all Editorial drafts, including drafts where the manager was not invited. Give it only to trusted staff. It does not grant the right to edit or publish another owner's manuscript.
 
-The required approval count applies to new drafts. Existing drafts keep the count they were created with. Editors may change text while a draft is editable; only invited reviewers may approve. The owner manages invitations, submits for review, returns to editing and publishes. Self-approval remains disabled in version 1.0.0. Reviewers can request changes with a mandatory comment. Changes to the team are allowed only while editing and clear approvals.
+The required approval count applies to new drafts. Existing drafts keep the count they were created with. Editors may change text while a draft is editable; normal approvals can only be given by invited reviewers. The owner manages invitations, submits for review, returns to editing and publishes. Normal owners cannot self-approve. Members with the explicit **Approve drafts directly** permission can approve accessible, nonempty drafts without collecting the configured reviewer count, including their own drafts. Administrators have this permission through Flarum’s normal administrator access. Direct approval does not grant access to private drafts by itself; an invitation or the management permission is still required. The owner remains responsible for publication. Reviewers can request changes with a mandatory comment. Changes to the team are allowed only while editing and clear approvals.
+
+### Homepage and change comparison
+
+In Editorial’s admin settings, configure the banner, title, description, optional welcome/instruction text, cards or list layout and the default status filter and sorting. Blank title/description fields use the translated default. Custom text is plain text and not automatically translated. Status and sort controls in the workspace can override the defaults for the current visit. Filtering happens on the server before pagination and never expands draft access.
+
+The History tab compares a saved text snapshot with the preceding saved text snapshot, skipping comment and workflow events. Red lines were removed, green lines were added; title and category-ID changes are shown separately. Long unchanged sections are collapsed. Large comparisons use replacement blocks and display at most 1,000 rows, with an explicit notice. Both complete texts remain available under **Read full text**.
+
+### Direct approval
+
+Grant **Approve drafts directly, bypassing the required reviewer count, including own drafts** only to trusted groups. An authorised member uses **Approve directly** on a draft they can access. A confirmation explains the bypass; the approval’s actor and revision are recorded in history. It is not automatic publication. The original owner still publishes through Flarum’s normal discussion API.
+
+Reopening, editing, restoring text or changing the team clears direct approvals. Publication checks that the approver still exists and has both Editorial use and direct-approval permissions. Without a valid direct approval, the normal reviewer-count check applies.
 
 ## First workflow
 
@@ -86,7 +110,7 @@ Limits: 50 active drafts per owner, 20 invited members per draft, 80-character t
 
 Backend checks use real Flarum 2.0.2 classes, migrations, query builders and an isolated SQLite database. They cover roles, privacy, state transitions, revision restoration, stale writes, revoked reviewer access, rollback and duplicate publication prevention. The publisher adapter is exercised with the real Flarum API client and a controlled response handler. Browser checks use the built frontend, real Flarum TextEditor/BasicEditorDriver classes and representative data.
 
-The maintainer reports successful testing on the target forum without observed errors. Local regression checks cover the cases described above; this does not guarantee compatibility with every third-party composer tool. This is the first stable release.
+The maintainer reports successful testing of version 1.0.0 on the target forum without observed errors. Local regression checks cover the cases described above; this does not guarantee compatibility with every third-party composer tool. Version 1.0.1 adds the homepage, comparison and direct-approval features; these additions have local regression coverage and still need verification on the target forum.
 
 ```bash
 cd js
@@ -109,19 +133,19 @@ The backend tests require `pdo_sqlite` and `mbstring` in the test PHP runtime. T
 
 Editorial ist ein privater Redaktionsbereich für Flarum 2. Lade Mitglieder ein, speichere Textrevisionen, sammle interne Rückmeldungen und veröffentliche ein freigegebenes Manuskript als normale Diskussion.
 
-**Paket:** `el-choco/editorial` · **Version:** `1.0.0` · **Lizenz:** MIT
+**Paket:** `el-choco/editorial` · **Version:** `1.0.1` · **Lizenz:** MIT
 
 ## Funktionen
 
-- Eigener Redaktionsbereich unter `/editorial` mit berechtigungsabhängigem Sidebar-Link.
+- Eigener Redaktionsbereich unter `/editorial` mit berechtigungsabhängigem Sidebar-Link. Die Startseite ist im Adminbereich anpassbar: Banner, Titel, Beschreibung, Begrüßungstext, Karten/Liste, Standardfilter und Sortierung.
 - Private Entwürfe mit Eigentümer, Bearbeitern und Prüfern.
 - Einladungen über bestehende Benutzernamen mit Vorschlägen ab drei Zeichen. Eingeladene Entwürfe erscheinen im Redaktionsbereich der Beteiligten.
 - Flarums nativer TextEditor mit Symbol-Werkzeugleiste der aktiven Erweiterungen und eigenem Composer-Zustand. Eine höhere Kategorieauswahl steht bei aktiviertem Flarum Tags bereit.
-- Bewusstes Speichern als neue Textrevision. Ältere Stände lassen sich lesen und als neue Revision wiederherstellen.
+- Bewusstes Speichern als neue Textrevision. Zeilenänderungen gegenüber dem vorherigen Textstand erscheinen rot/grün; Titeländerungen und Kategorie-IDs werden separat angezeigt. Vollständige Texte lassen sich lesen und ältere Stände als neue Revision wiederherstellen.
 - Interne Textkommentare mit Bezug zur jeweiligen Textrevision.
 - Eine bis fünf erforderliche Freigaben, im Adminbereich für neue Entwürfe einstellbar.
 - Ablauf: **Entwurf → In Prüfung → Freigegeben → Veröffentlicht**.
-- Während der Prüfung ist das Manuskript schreibgeschützt. Erneutes Öffnen oder angeforderte Änderungen heben Freigaben auf. Eigentümer können ihre eigenen Entwürfe nicht freigeben.
+- Während der Prüfung ist das Manuskript schreibgeschützt. Erneutes Öffnen oder angeforderte Änderungen heben Freigaben auf. Normale Eigentümer können sich nicht selbst freigeben; ein eigenes Gruppenrecht für die Direktfreigabe kann die Prüferzahl auch bei eigenen Entwürfen übergehen.
 - Veröffentlichung über Flarums reguläre Schnittstelle unter dem Konto des Eigentümers. Schreibrechte, Kategorien, Formatierung und Erweiterungsprüfungen bleiben wirksam.
 - Versionsprüfung gegen gegenseitiges Überschreiben. Bei einem Konflikt bleibt der lokale Text zum Herunterladen und manuellen Zusammenführen erhalten.
 - Ungespeicherter Text bleibt bei interner Navigation im Speicher desselben Anwendungstabs. Vor dem Neuladen oder Schließen warnt der Browser. Es wird kein Entwurfstext im Browserspeicher abgelegt.
@@ -132,13 +156,13 @@ Editorial ist ein privater Redaktionsbereich für Flarum 2. Lade Mitglieder ein,
 
 Flarum `^2.0.2`, PHP `^8.3` und Flarums eingerichtete Datenbank. Flarum 1.8 wird von dieser Ausgabe nicht unterstützt. FoF Drafts und Admin Console sind keine Voraussetzung.
 
-Die Version wird als installierbare ZIP geliefert. Verwende [die deutsche Anleitung](INSTALL-DE.md) oder [die englische Anleitung](INSTALL-EN.md). Die ZIP wird nach `/tmp` übertragen und für Composer in einen dauerhaften Quellordner entpackt. Gebautes JavaScript liegt bei; Node.js wird auf dem Forumserver nicht benötigt.
+Die Installation erfolgt über Packagist mit den unten stehenden Befehlen. Gebautes JavaScript liegt bei; Node.js wird auf dem Forumserver nicht benötigt. Separate lokale ZIP-Anleitungen verwenden `/tmp` für die Übertragung und einen dauerhaften Quellordner für Composer.
 
 Beim Aktivieren entstehen vier Datenbanktabellen. Ein Worker, Cronjob, externer Dienst oder API-Schlüssel ist nicht erforderlich.
 
 ## Installation über Packagist
 
-Sobald diese Version auf Packagist veröffentlicht wurde, als Dateisystembenutzer des Forums im Flarum-Verzeichnis ausführen (bei Docker im Container):
+Nach Veröffentlichung der Version 1.0.1 auf Packagist als Dateisystembenutzer des Forums im Flarum-Verzeichnis ausführen (bei Docker im Container):
 
 ```bash
 composer require el-choco/editorial:"^1.0" --update-no-dev --minimal-changes --no-scripts --no-interaction
@@ -149,13 +173,37 @@ php flarum cache:clear --force
 
 Bei CrazyMax nach erfolgreichem Composer-Vorgang und vor den Flarum-Befehlen `extension sync` ausführen. `"^1.0"` erlaubt künftige 1.x-Updates; `"*"` erlaubt auch spätere Hauptversionen unter Beachtung von Composers Stabilitätseinstellungen. Exakte Versionsvorgaben bleiben festgelegt. Beim Wechsel von einer lokalen Path-Installation zu Packagist den bisherigen Repository-Eintrag aus der Projekt- oder globalen Konfiguration entfernen und die festgelegte Versionsvorgabe durch `"^1.0"` ersetzen.
 
+## Update auf 1.0.1
+
+Nach Verfügbarkeit des Releases auf Packagist:
+
+```bash
+composer update el-choco/editorial
+php flarum migrate
+php flarum cache:clear
+```
+
+Als Dateisystembenutzer des Forums im Flarum-Verzeichnis ausführen. Bei CrazyMax nach erfolgreichem Composer-Vorgang zuerst `extension sync` und danach die Flarum-Befehle ausführen. Bei einer festen Vorgabe `1.0.0` stattdessen zuerst `composer require el-choco/editorial:"^1.0"` verwenden. Dieses Release benötigt eine neue Migration für zwei nullable Spalten zur Direktfreigabe. Vorhandene Entwürfe bleiben erhalten. Vorher Datenbank und Composer-Dateien sichern. Anschließend Browsercache leeren; falls OPcache alten Code hält, PHP-FPM neu laden.
+
 ## Rechte und Einrichtung
 
 Erlaube den gewünschten Gruppen **Editorial nutzen und an eingeladenen Entwürfen mitarbeiten**. Auch eingeladene Personen benötigen dieses Recht. Administratoren erhalten Zugriff über Flarums normales Rechtesystem.
 
 Das zusätzliche Recht **Alle privaten Entwürfe lesen, kommentieren, archivieren und endgültig löschen** erlaubt Zugriff auf sämtliche Editorial-Entwürfe – auch ohne Einladung. Vergib es nur an vertrauenswürdige Mitarbeiter. Es erlaubt nicht, fremde Manuskripte zu bearbeiten oder unter einem anderen Eigentümer zu veröffentlichen.
 
-Die Zahl erforderlicher Freigaben gilt für neue Entwürfe. Bestehende Entwürfe behalten ihre ursprüngliche Vorgabe. Bearbeiter ändern den Text im Entwurfszustand; ausschließlich eingeladene Prüfer dürfen freigeben. Der Eigentümer verwaltet das Team, fordert die Prüfung an, öffnet den Entwurf erneut und veröffentlicht ihn. Die Selbstfreigabe bleibt in Version 1.0.0 ausgeschlossen. Prüfer können Änderungen mit einem verpflichtenden Kommentar anfordern. Teamänderungen sind nur während der Bearbeitung möglich und heben Freigaben auf.
+Die Zahl erforderlicher Freigaben gilt für neue Entwürfe. Bestehende Entwürfe behalten ihre ursprüngliche Vorgabe. Bearbeiter ändern den Text im Entwurfszustand; reguläre Freigaben können nur eingeladene Prüfer erteilen. Der Eigentümer verwaltet das Team, fordert die Prüfung an, öffnet den Entwurf erneut und veröffentlicht ihn. Normale Eigentümer können sich nicht selbst freigeben. Mitglieder mit dem ausdrücklichen Recht **Entwürfe direkt freigeben** können zugängliche, nicht leere Entwürfe ohne die eingestellte Prüferzahl freigeben, auch eigene. Administratoren besitzen dieses Recht über Flarums normale Administratorberechtigung. Das Direktfreigaberecht gewährt allein keinen Zugriff auf private Entwürfe; dafür bleibt eine Einladung oder das Verwaltungsrecht erforderlich. Veröffentlichen darf weiterhin der Eigentümer. Prüfer können Änderungen mit einem verpflichtenden Kommentar anfordern. Teamänderungen sind nur während der Bearbeitung möglich und heben Freigaben auf.
+
+### Startseite und Änderungsvergleich
+
+In den Editorial-Einstellungen Banner, Titel, Beschreibung, optionalen Begrüßungs-/Hinweistext, Karten- oder Listenansicht sowie Standardfilter und Sortierung festlegen. Leere Titel- und Beschreibungsfelder verwenden den übersetzten Standard. Eigene Texte sind reiner Text und werden nicht automatisch übersetzt. In der Übersicht können Mitglieder Statusfilter und Sortierung für den aktuellen Besuch ändern. Die Filterung erfolgt vor der Seiteneinteilung auf dem Server und erweitert keine Zugriffsrechte.
+
+Im Verlauf wird eine Textrevision mit dem vorherigen gespeicherten Textstand verglichen; Kommentare und Statusereignisse werden dabei übersprungen. Entfernte Zeilen sind rot, neue grün. Titeländerungen und Kategorie-IDs erscheinen separat. Lange unveränderte Abschnitte werden zusammengefasst. Bei großen Vergleichen werden ersetzte Blöcke und höchstens 1.000 Zeilen mit entsprechendem Hinweis angezeigt. Unter **Vollständigen Text lesen** bleiben beide Texte vollständig verfügbar.
+
+### Direktfreigabe
+
+Das Recht **Entwürfe direkt freigeben und die erforderliche Prüferzahl übergehen, auch bei eigenen Entwürfen** gezielt an vertrauenswürdige Gruppen vergeben. Berechtigte Mitglieder wählen bei einem zugänglichen Entwurf **Direkt freigeben**. Eine Bestätigung erklärt die Ausnahme; Person und Revision werden im Verlauf festgehalten. Dies veröffentlicht noch keine Diskussion. Der ursprüngliche Eigentümer veröffentlicht weiterhin über Flarums reguläre Schnittstelle.
+
+Erneutes Öffnen, Bearbeiten, Wiederherstellen oder eine Teamänderung hebt Direktfreigaben auf. Vor der Veröffentlichung wird geprüft, ob die freigebende Person noch existiert und sowohl das Editorial-Nutzungsrecht als auch das Direktfreigaberecht besitzt. Ohne gültige Direktfreigabe gilt weiterhin die normale Prüferzahl.
 
 ## Erster Durchlauf
 
@@ -191,6 +239,4 @@ Grenzen: 50 aktive Entwürfe pro Eigentümer, 20 eingeladene Mitglieder pro Entw
 
 Die Backend-Prüfungen verwenden echte Klassen aus Flarum 2.0.2, die Migrationen, Datenbankabfragen und eine isolierte SQLite-Datenbank. Sie prüfen Rollen, Privatsphäre, Statuswechsel, Wiederherstellen, veraltete Speicherstände, entzogene Prüferrechte, Rückabwicklung und Schutz vor doppelter Veröffentlichung. Der Veröffentlichungsadapter wird mit Flarums echtem API-Client und einer kontrollierten Antwort geprüft. Browserprüfungen verwenden den gebauten Frontend-Code, Flarums echte TextEditor-/BasicEditorDriver-Klassen und Beispieldaten.
 
-Der Betreiber meldet erfolgreiche Tests im Ziel-Forum ohne beobachtete Fehler. Die lokalen Prüfungen decken die oben beschriebenen Fälle ab; eine Kompatibilitätsgarantie für sämtliche Editor-Werkzeuge anderer Anbieter ergibt sich daraus nicht. Dies ist die erste stabile Version.
-
-[Deutsche Update-Anleitung](UPDATE-DE.md) · [English update guide](UPDATE-EN.md)
+Der Betreiber meldet erfolgreiche Tests der Version 1.0.0 im Ziel-Forum ohne beobachtete Fehler. Die lokalen Prüfungen decken die oben beschriebenen Fälle ab; eine Kompatibilitätsgarantie für sämtliche Editor-Werkzeuge anderer Anbieter ergibt sich daraus nicht. Version 1.0.1 ergänzt Startseite, Vergleich und Direktfreigabe. Diese Ergänzungen sind lokal geprüft und müssen noch im Ziel-Forum bestätigt werden.
