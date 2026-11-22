@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.0.2 — 2026-11-22
+
+- Publish approved manuscripts as discussions, FoF Blog articles or Link Robins Wiki articles.
+- Configure destination names independently, including forums that renamed FoF Blog using Linguist.
+- Include blog summary/cover image and wiki category/slug in revision snapshots and approval invalidation.
+- Use native APIs and owner permissions; preserve additional blog moderation.
+- Keep separate wiki publication IDs and preserve old discussion links during migration.
+
+- Freigegebene Manuskripte als Diskussion, FoF-Blogartikel oder Link-Robins-Wikiartikel veröffentlichen.
+- Zielnamen unabhängig und frei im Adminbereich festlegen.
+- Blog-Kurzbeschreibung/Titelbild und Wiki-Kategorie/Adresse mit der Revision speichern; Änderungen benötigen neue Freigaben.
+- Native APIs und Eigentümerrechte verwenden; zusätzliche Blog-Moderation bleibt wirksam.
+- Wiki-Artikel-IDs getrennt speichern und vorhandene Diskussionslinks bei der Migration erhalten.
+
 ## 1.0.1 — 2026-11-21
 
 - Add administrator-configurable homepage banner, texts, cards/list layout, default status filter and sorting.

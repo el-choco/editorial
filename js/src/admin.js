@@ -4,6 +4,9 @@ import Admin from 'flarum/common/extenders/Admin';
 const tr = (key) => app.translator.trans('el-choco-editorial.admin.' + key);
 
 export const extend = [new Admin()
+  .setting(() => ({ setting: 'el-choco-editorial.label_discussion', type: 'text', maxlength: 60, label: tr('label_discussion'), help: tr('target_label_help') }))
+  .setting(() => ({ setting: 'el-choco-editorial.label_blog', type: 'text', maxlength: 60, label: tr('label_blog'), help: tr('target_label_help') }))
+  .setting(() => ({ setting: 'el-choco-editorial.label_wiki', type: 'text', maxlength: 60, label: tr('label_wiki'), help: tr('target_label_help') }))
   .setting(() => ({ setting: 'el-choco-editorial.approvals', type: 'select', default: '1',
     label: tr('approvals'), help: tr('approvals_help'), options: { '1': '1', '2': '2', '3': '3', '4': '4', '5': '5' } }))
   .setting(() => ({ setting: 'el-choco-editorial.home_banner', type: 'boolean', default: '1', label: tr('home_banner') }))

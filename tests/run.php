@@ -58,6 +58,11 @@ $upgradeId = $db->table('editorial_drafts')->insertGetId(['owner_id' => 1, 'titl
     'status' => 'draft', 'version' => 1, 'content_version' => 1, 'required_approvals' => 2, 'created_at' => gmdate('Y-m-d H:i:s'), 'updated_at' => gmdate('Y-m-d H:i:s')]);
 $approvalMigration = require dirname(__DIR__).'/migrations/2026_11_21_000000_add_direct_approval.php';
 $approvalMigration['up']($schema);
+$db->table('editorial_drafts')->where('id', $upgradeId)->update(['discussion_id' => 987]);
+$publicationMigration = require dirname(__DIR__).'/migrations/2026_11_22_000000_add_publication_targets.php';
+$publicationMigration['up']($schema);
+check($db->table('editorial_drafts')->where('id', $upgradeId)->value('publication_id') === 987, 'Upgrade preserves old publication link');
+check($db->table('editorial_drafts')->where('id', $upgradeId)->value('publication_type') === 'discussion', 'Existing draft defaults to discussion');
 check($db->table('editorial_drafts')->where('id', $upgradeId)->value('content') === 'Keep this manuscript', 'Upgrade preserves existing 1.0.0 manuscript');
 check($db->table('editorial_drafts')->where('id', $upgradeId)->value('direct_approved_by') === null, 'Existing manuscript does not acquire direct approval');
 $db->table('editorial_drafts')->where('id', $upgradeId)->delete();
@@ -66,7 +71,9 @@ check($schema->hasTable('editorial_drafts'), 'Migration respects table prefix');
 $gate = new class(new Container(), []) extends Gate {
     public array $revoked = [];
     public array $directUsers = [];
+    public array $publishingUsers = [1];
     public function allows(User $actor, string $ability, string|\Flarum\Database\AbstractModel|null $model): bool {
+        if (in_array($ability, ['blog.writeArticles', 'createArticle'], true)) return in_array((int) $actor->id, $this->publishingUsers, true);
         if ($ability === 'el-choco-editorial.approveDirectly') return in_array((int) $actor->id, $this->directUsers, true);
         return $ability === 'el-choco-editorial.use' ? !in_array((int) $actor->id, array_merge([7], $this->revoked), true) : ($ability === 'el-choco-editorial.manage' && (int) $actor->id === 6);
     }
@@ -257,23 +264,101 @@ check(mb_strlen($service->listing($owner, 1)['home']['title']) === 120, 'Homepag
 $container = new Container();
 $capture = new class implements \Psr\Http\Server\MiddlewareInterface {
     public ?ServerRequestInterface $request = null;
+    public bool $reject = false;
     public function process(ServerRequestInterface $request, \Psr\Http\Server\RequestHandlerInterface $handler): \Psr\Http\Message\ResponseInterface {
         $this->request = $request;
-        return new JsonResponse(['data' => ['type' => 'discussions', 'id' => '42']]);
+        return new JsonResponse(['data' => ['type' => str_contains($request->getUri()->getPath(), 'wiki') ? 'linkrobins-wiki-articles' : 'discussions', 'id' => '42']], $this->reject ? 403 : 200);
     }
 };
 $container->instance('editorial.test.capture', $capture);
 $pipe = new ClientMiddlewarePipe($container, ['editorial.test.capture']);
-$realPublisher = new Publisher(new Client($pipe));
-$publishedId = $realPublisher->publish($owner, (object) ['title' => 'API guide', 'content' => '**Body**', 'tags' => '[2,3]'], $request);
+$realPublisher = new Publisher(new Client($pipe), $settings);
+$publishedId = $realPublisher->publish($owner, (object) ['title' => 'API guide', 'content' => '**Body**', 'tags' => '[2,3]', 'publication_type' => 'discussion', 'publication_options' => '[]'], $request);
 check($publishedId === 42, 'Publisher uses actual Flarum API client');
 check($capture->request->getUri()->getPath() === '/discussions', 'Uses standard discussion endpoint');
 check(RequestUtil::getActor($capture->request)->id === $owner->id, 'Publishing actor remains owner');
 check($capture->request->getParsedBody()['data']['relationships']['tags']['data'][0]['id'] === '2', 'Tags use JSON:API relationship structure');
 check($capture->request->getParsedBody()['data']['attributes']['content'] === '**Body**', 'Raw post markup preserved');
+
+$publicationSettings = new \ElChoco\Editorial\PublicationSettings($settings);
+rejects(fn () => $service->create($owner, ['title' => 'Unavailable blog', 'content' => 'Body', 'publication_type' => 'blog']), 'target_unavailable');
+$settings->set('extensions_enabled', '["fof-blog","linkrobins-wiki"]');
+$settings->set('blog_tags', '11|12|invalid|11');
+$settings->set('el-choco-editorial.label_blog', 'Mein Wiki');
+$available = $publicationSettings->read($owner);
+check(count(array_filter($available['targets'], fn ($target) => $target['available'])) === 3, 'Both optional integrations detected');
+check($available['targets'][1]['label'] === 'Mein Wiki', 'FoF Blog label can be renamed independently');
+check($available['blogTags'] === [11, 12], 'Blog tags normalized');
+rejects(fn () => $publicationSettings->values(['publication_type' => 'blog', 'publication_options' => ['image' => 'javascript:alert(1)']]), 'invalid');
+rejects(fn () => $publicationSettings->values(['publication_type' => 'wiki', 'publication_options' => ['category' => '2-foo']]), 'invalid');
+rejects(fn () => $publicationSettings->values(['publication_type' => 'wiki', 'publication_options' => ['slug' => '../admin']]), 'invalid');
+
+$blogInput = ['title' => 'Blog manuscript', 'content' => '**Shared article**', 'tags' => [11], 'publication_type' => 'blog',
+    'publication_options' => ['summary' => 'Team summary', 'image' => 'https://example.test/cover.png']];
+$blogDraft = $service->create($owner, $blogInput);
+$blogId = (int) $blogDraft['draft']->id;
+check($blogDraft['draft']->publication_options['summary'] === 'Team summary', 'Blog metadata persisted privately');
+$firstRevision = $blogDraft['history'][0]->id;
+$gate->directUsers = [1];
+$mutateBlog = fn ($action, $extra = []) => $service->mutate($owner, $blogId, ['action' => $action,
+    'version' => (int) $service->detail($owner, $blogId)['draft']->version] + $extra, $request);
+$approvedBlog = $mutateBlog('approve_directly');
+check($approvedBlog['canPublish'], 'Blog ready for authorized owner');
+rejects(fn () => $mutateBlog('save', [...$blogInput, 'publication_type' => 'wiki']), 'state');
+$mutateBlog('reopen');
+$wikiDraft = $mutateBlog('save', ['title' => 'Wiki manuscript', 'content' => 'Public knowledge', 'tags' => [11], 'publication_type' => 'wiki',
+    'publication_options' => ['category' => 5, 'slug' => 'docker-guide']]);
+check($wikiDraft['directApproval'] === null && !$wikiDraft['canPublish'] && $wikiDraft['draft']->content_version > $approvedBlog['draft']->content_version, 'Changing target invalidates approval');
+check($wikiDraft['draft']->tags === [], 'Wiki target has separate categories, no discussion tags');
+$revision = $service->revision($owner, $blogId, $wikiDraft['history'][0]->id);
+check($revision['revision']->publication_type === 'wiki' && $revision['previous']->publication_type === 'blog', 'History includes publication target');
+check($revision['revision']->publication_options['category'] === 5, 'History includes category and URL options');
+$restored = $mutateBlog('restore', ['revision' => $firstRevision]);
+check($restored['draft']->publication_type === 'blog' && $restored['draft']->publication_options['summary'] === 'Team summary', 'Restoring revision restores target and metadata');
+$mutateBlog('approve_directly');
+$settings->set('extensions_enabled', '[]');
+check(!$service->detail($owner, $blogId)['canPublish'], 'Disabling extension hides publish action');
+rejects(fn () => $mutateBlog('publish'), 'target_unavailable');
+$settings->set('extensions_enabled', '["fof-blog","linkrobins-wiki"]');
+$gate->publishingUsers = [];
+check(!$service->detail($owner, $blogId)['canPublish'], 'Revoked publishing rights reflected in draft');
+$apiDraft = (object) [...$blogInput, 'tags' => '[11]', 'publication_options' => json_encode($blogInput['publication_options'])];
+forbidden(fn () => $realPublisher->publish($owner, $apiDraft, $request));
+$gate->publishingUsers = [1];
+$realPublisher->publish($owner, $apiDraft, $request);
+$payload = $capture->request->getParsedBody()['data'];
+check($capture->request->getUri()->getPath() === '/discussions' && $payload['attributes']['newBlogMeta']['summary'] === 'Team summary', 'Blog uses official discussion create metadata');
+check($payload['attributes']['newBlogMeta']['featuredImage'] === 'https://example.test/cover.png' && !isset($payload['attributes']['newBlogMeta']['isPendingReview']), 'Cover passed without bypassing blog moderation');
+$wikiApi = (object) ['title' => 'Knowledge', 'content' => 'Wiki **content**', 'tags' => '[]', 'publication_type' => 'wiki',
+    'publication_options' => '{"category":5,"slug":"knowledge"}'];
+$realPublisher->publish($owner, $wikiApi, $request);
+$payload = $capture->request->getParsedBody()['data'];
+check($capture->request->getUri()->getPath() === '/linkrobins-wiki-articles' && $payload['type'] === 'linkrobins-wiki-articles', 'Wiki uses native article endpoint');
+check($payload['attributes']['isDraft'] === false && $payload['attributes']['slug'] === 'knowledge', 'Wiki published state and slug explicit');
+check($payload['relationships']['category']['data']['id'] === '5', 'Wiki category relationship sent');
+check(RequestUtil::getActor($capture->request)->id === $owner->id, 'Wiki publishing keeps owner identity');
+$capture->reject = true;
+rejects(fn () => $realPublisher->publish($owner, $wikiApi, $request), 'wiki_category_invalid');
+$capture->reject = false;
+$gate->publishingUsers = [];
+forbidden(fn () => $realPublisher->publish($owner, $wikiApi, $request));
+$gate->publishingUsers = [1];
+$missingTag = $service->create($owner, [...$blogInput, 'tags' => []]);
+rejects(fn () => $service->mutate($owner, $missingTag['draft']->id, ['action' => 'approve_directly', 'version' => 1], $request), 'blog_tag_required');
+$plain = $service->create($owner, ['title' => 'Plain discussion', 'content' => 'Body', 'tags' => [11]]);
+rejects(fn () => $service->mutate($owner, $plain['draft']->id, ['action' => 'approve_directly', 'version' => 1], $request), 'blog_tag_discussion');
+$mutateBlog('reopen');
+$mutateBlog('save', ['title' => 'Final wiki', 'content' => 'Ready', 'publication_type' => 'wiki']);
+$mutateBlog('approve_directly');
+$count = $db->table('discussions')->count();
+$wikiPublished = $mutateBlog('publish');
+check($wikiPublished['draft']->publication_id !== null && $wikiPublished['draft']->discussion_id === null, 'Wiki stores article ID separately from discussion ID');
+rejects(fn () => $mutateBlog('publish'), 'closed');
+check($db->table('discussions')->count() === $count + 1, 'Repeated publish cannot duplicate a publication');
 foreach (require dirname(__DIR__).'/extend.php' as $extender) {
     check($extender instanceof \Flarum\Extend\ExtenderInterface, 'Extension registers a real Flarum 2 extender');
 }
+$publicationMigration['down']($schema);
 $approvalMigration['down']($schema);
 $migration['down']($schema);
 check(!$schema->hasTable('editorial_drafts'), 'Purge migration removes editorial tables');

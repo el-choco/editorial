@@ -268,8 +268,66 @@ test('admin bundle registers homepage controls and a distinct direct-approval ri
   context.flarum.reg.get = (_, name) => ({ 'admin/app': app, 'common/extenders/Admin': Admin }[name]);
   runInNewContext(readFileSync(path.join(root, 'js/dist/admin.js'), 'utf8'), context);
   const admin = modules.admin.extend[0];
-  assert.equal(admin.settings.length, 8);
+  assert.equal(admin.settings.length, 11);
+  assert.equal(admin.settings.some((factory) => factory().setting === 'el-choco-editorial.label_blog'), true);
   assert.equal(admin.settings.some((factory) => factory().setting === 'el-choco-editorial.home_title'), true);
   assert.equal(admin.settings.some((factory) => factory().setting === 'el-choco-editorial.home_sort'), true);
   assert.equal(admin.permissions.some((factory) => factory().permission === 'el-choco-editorial.approveDirectly'), true);
+});
+
+test('Publication fields preserve technical targets and custom display names', async () => {
+  const { page } = setup(); await tick();
+  page.data.publication = { targets: [{ type: 'discussion', label: '', available: true }, { type: 'blog', label: 'Wiki', available: true },
+    { type: 'wiki', label: 'Knowledge base', available: false }], blogTags: [1] };
+  assert.equal(page.targetLabel('blog'), 'Wiki');
+  const fields = page.publicationFields(true);
+  const select = fields.children.find(node => node?.attrs?.id === 'editorial-publication-type');
+  assert.deepEqual(select.children.map(node => node.attrs.value), ['discussion', 'blog']);
+  select.attrs.onchange({ target: { value: 'blog' } });
+  page.publicationOptions.summary = 'Shared summary'; page.publicationOptions.image = 'https://example.test/image.png';
+  assert.equal(page.dirty(), true);
+  const input = page.manuscriptInput();
+  assert.equal(input.publication_type, 'blog'); assert.equal(input.publication_options.summary, 'Shared summary');
+});
+
+test('Target metadata is kept in navigation recovery buffers and versioned saves', async () => {
+  const { page, modules } = setup(); await tick();
+  page.publicationType = 'wiki'; page.publicationOptions = { category: 5, slug: 'team-guide' };
+  page.onremove({});
+  const next = new modules.forum.EditorialDraft(); next.oninit({ attrs: { id: '7' } }); await tick();
+  assert.equal(next.publicationType, 'wiki'); assert.equal(next.publicationOptions.category, 5);
+  assert.equal(next.dirty(), true); next.onremove({});
+});
+
+test('Wiki publication uses a wiki link and stays disabled when integration routes are absent', async () => {
+  const { page, app } = setup(); await tick();
+  const draft = { publication_type: 'wiki', publication_id: 41, discussion_id: null };
+  app.routes = {};
+  assert.equal(page.publicationLink(draft), null);
+  app.routes['linkrobins-wiki.show'] = {};
+  app.route = (name, params) => name + '/' + params.id;
+  assert.equal(page.publicationLink(draft).attrs.href, 'linkrobins-wiki.show/41');
+  app.routes['blog.post'] = {};
+  assert.equal(page.publicationLink({ publication_type: 'blog', publication_id: 42 }).attrs.href, 'blog.post/42');
+});
+
+test('Wiki categories are loaded from their native API and malicious labels stay text', async () => {
+  const { page, app, calls } = setup(); await tick();
+  app.request = async (options) => { calls.push(options); return { data: [{ id: '5', attributes: { name: '<img onerror=alert(1)>' } }] }; };
+  await page.loadWikiCategories();
+  assert.equal(page.wikiCategories[0].id, '5');
+  assert.equal(calls.at(-1).url, 'https://forum.test/sub/api/linkrobins-wiki-categories');
+  page.publicationType = 'wiki'; page.publicationOptions = { category: 5, slug: '' };
+  assert.doesNotThrow(() => page.publicationFields(false));
+});
+
+test('Publication confirmation names the configured target before sending a request', async () => {
+  const { page, app, context, calls } = setup(); await tick();
+  page.data.publication = { targets: [{ type: 'blog', label: 'My Wiki', available: true }] };
+  page.data.draft.publication_type = 'blog'; page.publicationType = 'blog';
+  let message;
+  app.translator.trans = (key, values = {}) => key.endsWith('confirm_publish') ? 'Publish as ' + values.target : key;
+  context.window.confirm = text => { message = text; return false; };
+  const before = calls.length; await page.action('publish');
+  assert.equal(message, 'Publish as My Wiki'); assert.equal(calls.length, before);
 });

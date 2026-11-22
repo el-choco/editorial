@@ -36,7 +36,9 @@
       "optional-dependencies": [
         "flarum/markdown",
         "fof/rich-text",
-        "fof/upload"
+        "fof/upload",
+        "fof/blog",
+        "linkrobins/wiki"
       ]
     }
   },
@@ -51,5 +53,9 @@
       "/UPDATE-DE.md",
       "/UPDATE-EN.md"
     ]
+  },
+  "suggest": {
+    "fof/blog": "Publish Editorial manuscripts as blog articles.",
+    "linkrobins/wiki": "Publish Editorial manuscripts as wiki articles."
   }
 }

@@ -21,7 +21,7 @@ const status = (value) => m('span.Editorial-status', { 'data-status': value }, t
 const pendingManuscripts = new Map();
 const errorCode = (error) => {
   const code = error?.response?.errors?.[0]?.code;
-  return ['conflict', 'not_found', 'invalid', 'limit', 'closed', 'state', 'member', 'reviewers', 'publish_failed'].includes(code) ? code : 'request';
+  return ['conflict', 'not_found', 'invalid', 'limit', 'closed', 'state', 'member', 'reviewers', 'publish_failed', 'target_unavailable', 'blog_tag_required', 'blog_tag_discussion', 'wiki_category_invalid', 'permission_denied'].includes(code) ? code : 'request';
 };
 const button = (label, onclick, disabled = false, primary = false) => m('button.Button', {
   type: 'button', className: primary ? 'Button--primary' : '', onclick, disabled,
@@ -139,6 +139,9 @@ export class EditorialDraft extends Page {
     this.composer = new ComposerState();
     this.comment = '';
     this.tags = [];
+    this.publicationType = 'discussion';
+    this.publicationOptions = {};
+    this.wikiCategories = [];
     this.tagOptions = [];
     this.bufferKey = (app.session.user?.id() || 'guest') + ':' + this.id;
     this.recoverPending = true;
@@ -154,7 +157,7 @@ export class EditorialDraft extends Page {
     clearTimeout(this.searchTimer);
     this.searchRevision++;
     if (this.dirty() || this.comment) {
-      pendingManuscripts.set(this.bufferKey, { title: this.title, content: this.content, tags: [...this.tags], comment: this.comment, version: this.data.draft.version });
+      pendingManuscripts.set(this.bufferKey, { ...this.manuscriptInput(), comment: this.comment, version: this.data.draft.version });
     }
     this.active = false;
     window.removeEventListener('beforeunload', this.beforeUnload);
@@ -162,7 +165,8 @@ export class EditorialDraft extends Page {
   }
 
   dirty() {
-    return !!this.data && (this.title !== this.data.draft.title || this.content !== this.data.draft.content || JSON.stringify(this.tags) !== JSON.stringify(this.data.draft.tags));
+    return !!this.data && (this.title !== this.data.draft.title || this.content !== this.data.draft.content || JSON.stringify(this.tags) !== JSON.stringify(this.data.draft.tags)
+      || this.publicationType !== (this.data.draft.publication_type || 'discussion') || JSON.stringify(this.publicationOptions) !== JSON.stringify({ ...this.data.draft.publication_options }));
   }
 
   accept(data) {
@@ -170,6 +174,9 @@ export class EditorialDraft extends Page {
     this.title = data.draft.title;
     this.content = data.draft.content;
     this.tags = [...data.draft.tags];
+    this.publicationType = data.draft.publication_type || 'discussion';
+    this.publicationOptions = { ...data.draft.publication_options };
+    if (data.publication?.targets.some(target => target.type === 'wiki' && target.available)) this.loadWikiCategories();
     this.editorKey++;
     this.composer.fields.content(this.content);
     this.snapshot = null;
@@ -188,6 +195,7 @@ export class EditorialDraft extends Page {
         const pending = this.recoverPending && pendingManuscripts.get(this.bufferKey);
         if (pending) {
           this.title = pending.title; this.content = pending.content; this.tags = [...pending.tags]; this.comment = pending.comment;
+          this.publicationType = pending.publication_type || 'discussion'; this.publicationOptions = { ...pending.publication_options };
           this.composer.fields.content(this.content);
           this.recovered = true;
           if (Number(pending.version) !== Number(data.draft.version)) {
@@ -205,7 +213,8 @@ export class EditorialDraft extends Page {
   async action(action, extra = {}) {
     if (this.busy || !this.data) return;
     if (action !== 'save' && this.dirty()) { this.error = 'unsaved'; return; }
-    if (['publish', 'delete', 'restore', 'archive', 'approve_directly'].includes(action) && !window.confirm(txt('confirm_' + action))) return;
+    if (['publish', 'delete', 'restore', 'archive', 'approve_directly'].includes(action)
+      && !window.confirm(txt('confirm_' + action, action === 'publish' ? { target: this.targetLabel(this.publicationType) } : {}))) return;
     this.busy = true;
     this.error = '';
     try {
@@ -224,6 +233,74 @@ export class EditorialDraft extends Page {
       if (action === 'invite') this.searchMembers('');
     } catch (error) { if (this.active) this.error = errorCode(error); }
     finally { if (this.active) { this.busy = false; m.redraw(); } }
+  }
+
+  manuscriptInput() {
+    return { title: this.title, content: this.content, tags: [...this.tags], publication_type: this.publicationType,
+      publication_options: { ...this.publicationOptions } };
+  }
+
+  targetLabel(type) {
+    return this.data?.publication?.targets.find(target => target.type === type)?.label || txt('target_' + type);
+  }
+
+  async loadWikiCategories() {
+    if (this.wikiCategoriesLoaded) return;
+    this.wikiCategoriesLoaded = true;
+    this.wikiCategoriesError = false;
+    try {
+      const categories = [];
+      for (let offset = 0; offset < 1000; offset += 100) {
+        const result = await app.request({ url: app.forum.attribute('apiUrl') + '/linkrobins-wiki-categories',
+          params: { 'page[limit]': 100, 'page[offset]': offset }, errorHandler: () => {} });
+        if (!this.active) return;
+        const rows = Array.isArray(result.data) ? result.data : [];
+        categories.push(...rows.map(row => ({ id: String(row.id), name: row.attributes?.name || '#' + row.id })));
+        if (rows.length < 100) break;
+      }
+      this.wikiCategories = categories;
+    } catch { if (this.active) this.wikiCategoriesError = true; }
+    if (this.active) m.redraw();
+  }
+
+  publicationFields(canEdit) {
+    const disabled = !canEdit || this.busy;
+    const targets = this.data.publication?.targets || [{ type: 'discussion', available: true }];
+    const field = (key, label, tag = 'input', attrs = {}) => [m('label', { for: 'editorial-pub-' + key }, tr(label)),
+      m(tag + '.FormControl', { id: 'editorial-pub-' + key, value: this.publicationOptions[key] || '', disabled,
+        oninput: event => { this.publicationOptions[key] = event.target.value; }, ...attrs })];
+    return m('section.Editorial-publication', [
+      m('label', { for: 'editorial-publication-type' }, tr('publication_target')),
+      m('select.FormControl', { id: 'editorial-publication-type', value: this.publicationType, disabled,
+        onchange: event => { this.publicationType = event.target.value; this.publicationOptions = this.publicationType === 'blog' ? { summary: '', image: '' }
+          : this.publicationType === 'wiki' ? { category: null, slug: '' } : {}; if (this.publicationType === 'wiki') this.tags = []; } },
+      targets.filter(target => target.available || target.type === this.publicationType).map(target => m('option', { value: target.type, disabled: !target.available }, this.targetLabel(target.type)))),
+      m('p.Editorial-muted', tr('publication_help')),
+      targets.some(target => target.type === this.publicationType && !target.available) && m('.Alert', tr('error_target_unavailable')),
+      this.publicationType === 'blog' && [m('p.Editorial-muted', tr('blog_help')), ...field('summary', 'blog_summary', 'textarea', { rows: 3, maxlength: 1000 }),
+        ...field('image', 'blog_image', 'input', { type: 'url', maxlength: 2048, placeholder: 'https://…' })],
+      this.publicationType === 'wiki' && [
+        m('label', { for: 'editorial-wiki-category' }, tr('wiki_category')),
+        m('select.FormControl', { id: 'editorial-wiki-category', value: String(this.publicationOptions.category || ''), disabled,
+          onchange: event => { this.publicationOptions.category = event.target.value ? Number(event.target.value) : null; } }, [
+          m('option', { value: '' }, tr('wiki_uncategorized')),
+          ...this.wikiCategories.map(category => m('option', { value: category.id }, category.name)),
+          this.publicationOptions.category && !this.wikiCategories.some(category => category.id === String(this.publicationOptions.category))
+            && m('option', { value: String(this.publicationOptions.category) }, '#' + this.publicationOptions.category),
+        ]),
+        this.wikiCategoriesError && m('p.Editorial-muted', tr('wiki_categories_failed')),
+        ...field('slug', 'wiki_slug', 'input', { maxlength: 191, placeholder: 'docker-einstieg' }),
+        m('p.Editorial-muted', tr('wiki_help')),
+      ],
+    ]);
+  }
+
+  publicationLink(draft) {
+    const id = draft.publication_id || draft.discussion_id;
+    if (!id) return null;
+    const route = draft.publication_type === 'wiki' ? 'linkrobins-wiki.show' : draft.publication_type === 'blog' && app.routes?.['blog.post'] ? 'blog.post' : 'discussion';
+    if (!app.routes?.[route]) return null;
+    return m(Link, { href: app.route(route, { id }), className: 'Button Button--primary' }, tr('open_publication'));
   }
 
   async showRevision(id) {
@@ -318,6 +395,7 @@ export class EditorialDraft extends Page {
             m('.Editorial-tabs', ['write', 'team', 'history'].map((tab) => m('button.Button', { type: 'button', 'aria-pressed': this.tab === tab,
               className: this.tab === tab ? 'Button--primary' : '', onclick: () => { this.tab = tab; } }, tr('tab_' + tab)))),
             this.tab === 'write' && [
+              this.publicationFields(canEdit),
               m('label', { for: 'editorial-title' }, tr('title')),
               m('input.FormControl', { id: 'editorial-title', value: this.title, maxlength: 80, disabled: !canEdit || this.busy, oninput: (event) => { this.title = event.target.value; } }),
               m('label', { for: 'editorial-content' }, tr('content')),
@@ -325,15 +403,15 @@ export class EditorialDraft extends Page {
                 key: this.editorKey, composer: this.composer, value: this.content,
                 submitLabel: txt('save'), disabled: this.busy,
                 onchange: (value) => { this.content = value; this.composer.fields.content(value); m.redraw(); },
-                onsubmit: () => { if (!this.busy && this.dirty()) this.action('save', { title: this.title, content: this.content, tags: this.tags }); },
+                onsubmit: () => { if (!this.busy && this.dirty()) this.action('save', this.manuscriptInput()); },
               })) : m('textarea.FormControl.Editorial-content', { id: 'editorial-content', value: this.content, rows: 18, readonly: true }),
               m('small.Editorial-muted', tr('format_help')),
-              this.tagOptions.length > 0 && [m('label', { for: 'editorial-tags' }, tr('tags')),
+              this.publicationType !== 'wiki' && this.tagOptions.length > 0 && [m('label', { for: 'editorial-tags' }, tr('tags')),
                 m('select.FormControl', { id: 'editorial-tags', multiple: true, size: 6, disabled: !canEdit || this.busy,
                   onchange: (event) => { this.tags = Array.from(event.target.selectedOptions, (option) => Number(option.value)); } },
-                  [...this.tagOptions.map((tag) => ({ id: Number(tag.id()), name: tag.name() })), ...this.tags.filter((id) => !this.tagOptions.some((tag) => Number(tag.id()) === id)).map((id) => ({ id, name: '#' + id }))]
+                  [...this.tagOptions.map((tag) => ({ id: Number(tag.id()), name: tag.name() + (this.publicationType === 'blog' && this.data.publication?.blogTags.includes(Number(tag.id())) ? ' · ' + this.targetLabel('blog') : '') })), ...this.tags.filter((id) => !this.tagOptions.some((tag) => Number(tag.id()) === id)).map((id) => ({ id, name: '#' + id }))]
                     .map((tag) => m('option', { value: tag.id, selected: this.tags.includes(tag.id) }, tag.name)))],
-              m('.Editorial-actions', [canEdit && button('save', () => this.action('save', { title: this.title, content: this.content, tags: this.tags }), this.busy || !this.dirty(), true),
+              m('.Editorial-actions', [canEdit && button('save', () => this.action('save', this.manuscriptInput()), this.busy || !this.dirty(), true),
                 button('download', () => this.download()), button('refresh', () => this.load(true), this.busy)]),
             ],
             this.tab === 'team' && this.team(owner, disabled),
@@ -361,7 +439,11 @@ export class EditorialDraft extends Page {
               canApprove && button('approve', () => this.action('approve'), disabled, true),
               owner && ['review', 'approved'].includes(draft.status) && button('reopen', () => this.action('reopen'), disabled),
               canPublish && button('publish', () => this.action('publish'), disabled, true)]),
-            draft.discussion_id && m(Link, { href: app.route('discussion', { id: draft.discussion_id }), className: 'Button Button--primary' }, tr('open_discussion')),
+            m('p.Editorial-muted', [tr('publication_target'), ': ', this.targetLabel(draft.publication_type || 'discussion')]),
+            owner && draft.status === 'approved' && this.data.publication?.targets.some(target => target.type === draft.publication_type && target.available && !target.canPublish)
+              && m('p.Editorial-muted', tr('error_permission_denied')),
+            this.publicationLink(draft),
+            draft.publication_type === 'blog' && draft.status === 'published' && m('p.Editorial-muted', tr('blog_moderation_help')),
           ]),
           m('section.Editorial-card.Editorial-people', [m('h3', tr('team')),
             this.person(draft.owner_id, 'owner'),
@@ -410,6 +492,12 @@ export class EditorialDraft extends Page {
     const comparison = this.comparison;
     return m('.Editorial-snapshot', [
       m('h3', [tr('revision_label', { number: snapshot.content_version }), ' · ', snapshot.title]),
+      m('p.Editorial-diffMeta', [tr('publication_target'), ': ', previous ? this.targetLabel(previous.publication_type || 'discussion') + ' → ' : '', this.targetLabel(snapshot.publication_type || 'discussion')]),
+      m('dl.Editorial-diffMeta', Object.entries(snapshot.publication_options || {}).map(([key, value]) => [
+        m('dt', tr(({ summary: 'blog_summary', image: 'blog_image', category: 'wiki_category', slug: 'wiki_slug' })[key] || 'publication_target')),
+        m('dd', value == null || value === '' ? '—' : String(value)),
+      ])),
+      previous && JSON.stringify(previous.publication_options) !== JSON.stringify(snapshot.publication_options) && m('p.Editorial-diffMeta', tr('publication_details_changed')),
       m('p', previous ? tr('changes_from', { number: previous.content_version }) : tr('initial_revision')),
       m('.Editorial-tabs', [button('show_diff', () => { this.revisionView = 'diff'; }), button('show_text', () => { this.revisionView = 'text'; })]),
       this.revisionView === 'text' ? [previous && m('details', [m('summary', tr('previous_text')), m('pre', previous.content)]), m('pre', snapshot.content)] : [

@@ -10,7 +10,7 @@ use Psr\Http\Message\ServerRequestInterface;
 
 final class DraftService
 {
-    public const VERSION = '1.0.1';
+    public const VERSION = '1.0.2';
 
     public function __construct(
         private readonly ConnectionInterface $db,
@@ -58,9 +58,9 @@ final class DraftService
             $query->orderByDesc('updated_at');
         }
         $rows = $query->orderByDesc('id')->offset(($page - 1) * 20)->limit(20)
-            ->get(['id', 'owner_id', 'title', 'status', 'version', 'content_version', 'updated_at', 'discussion_id']);
+            ->get(['id', 'owner_id', 'title', 'status', 'version', 'content_version', 'updated_at', 'discussion_id', 'publication_type', 'publication_id']);
         return ['version' => self::VERSION, 'items' => $rows, 'page' => $page, 'hasMore' => $page * 20 < $count,
-            'total' => $count, 'home' => $home, 'status' => $status, 'sort' => $sort];
+            'total' => $count, 'home' => $home, 'status' => $status, 'sort' => $sort, 'publication' => (new PublicationSettings($this->settings))->read($actor)];
     }
 
     private function find(User $actor, int $id, bool $lock = false): object
@@ -93,18 +93,21 @@ final class DraftService
         $users = $this->db->table('users')->whereIn('id', array_unique($ids))->pluck('username', 'id')->all();
         $approvals = $members->filter(fn ($member) => $member->role === 'reviewer' && (int) $member->approved_version === (int) $draft->content_version)->count();
         $directValid = $this->directApprovalValid($draft);
+        $publication = (new PublicationSettings($this->settings))->read($actor);
+        $target = current(array_filter($publication['targets'], fn ($target) => $target['type'] === $draft->publication_type));
         $draft->tags = json_decode($draft->tags, true, 16, JSON_THROW_ON_ERROR);
+        $draft->publication_options = json_decode($draft->publication_options ?? '[]', true, 16, JSON_THROW_ON_ERROR);
         return ['version' => self::VERSION, 'draft' => $draft, 'role' => $role, 'members' => $members,
             'history' => $history, 'historyTruncated' => (int) $draft->version > 100,
             'comments' => $comments, 'commentsTruncated' => $this->db->table('editorial_comments')->where('draft_id', $id)->count() > 100,
-            'users' => $users, 'approvals' => $approvals,
+            'users' => $users, 'approvals' => $approvals, 'publication' => $publication,
             'directApproval' => $draft->direct_approved_by ? ['userId' => (int) $draft->direct_approved_by,
                 'revision' => (int) $draft->direct_approved_version, 'valid' => $directValid] : null,
             'canApproveDirectly' => $actor->can('el-choco-editorial.approveDirectly') && !$directValid
                 && in_array($draft->status, ['draft', 'review', 'approved'], true) && trim($draft->content) !== '',
             'canEdit' => in_array($role, ['owner', 'editor'], true) && $draft->status === 'draft',
             'canApprove' => $role === 'reviewer' && $draft->status === 'review',
-            'canPublish' => $role === 'owner' && $draft->status === 'approved' && ($directValid || $approvals >= $draft->required_approvals)];
+            'canPublish' => $role === 'owner' && $draft->status === 'approved' && ($directValid || $approvals >= $draft->required_approvals) && ($target['canPublish'] ?? false)];
     }
 
     public function revision(User $actor, int $id, int $revision): array
@@ -115,10 +118,12 @@ final class DraftService
             throw new EditorialException('not_found', 404);
         }
         $row->tags = json_decode($row->tags, true, 16, JSON_THROW_ON_ERROR);
+        $row->publication_options = json_decode($row->publication_options ?? '[]', true, 16, JSON_THROW_ON_ERROR);
         $previous = $this->db->table('editorial_revisions')->where('draft_id', $id)->where('version', '<', $row->version)
             ->whereNotNull('content')->orderByDesc('version')->first();
         if ($previous) {
             $previous->tags = json_decode($previous->tags, true, 16, JSON_THROW_ON_ERROR);
+            $previous->publication_options = json_decode($previous->publication_options ?? '[]', true, 16, JSON_THROW_ON_ERROR);
         }
         return ['revision' => $row, 'previous' => $previous];
     }
@@ -145,7 +150,9 @@ final class DraftService
                 throw new EditorialException('invalid');
             }
         }
-        return ['title' => $title, 'content' => $content, 'tags' => json_encode(array_values(array_unique(array_map('intval', $tags))), JSON_THROW_ON_ERROR)];
+        $publication = (new PublicationSettings($this->settings))->values($input);
+        if ($publication['publication_type'] === 'wiki') $tags = [];
+        return ['title' => $title, 'content' => $content, 'tags' => json_encode(array_values(array_unique(array_map('intval', $tags))), JSON_THROW_ON_ERROR)] + $publication;
     }
 
     public function create(User $actor, array $input): array
@@ -176,6 +183,8 @@ final class DraftService
             'content_version' => $draft->content_version, 'action' => $action, 'detail' => $detail,
             'title' => $snapshot ? $draft->title : null, 'content' => $snapshot ? $draft->content : null,
             'tags' => $snapshot ? $draft->tags : null, 'created_at' => gmdate('Y-m-d H:i:s'),
+            'publication_type' => $draft->publication_type,
+            'publication_options' => $snapshot ? $draft->publication_options : null,
         ]);
     }
 
@@ -231,7 +240,9 @@ final class DraftService
                     throw new EditorialException('state', 409);
                 }
                 $values = $action === 'restore' ? $this->revision($actor, $id, (int) ($input['revision'] ?? 0))['revision'] : null;
-                $values = $values ? ['title' => $values->title, 'content' => $values->content, 'tags' => json_encode($values->tags, JSON_THROW_ON_ERROR)] : $this->values($input);
+                $values = $values ? ['title' => $values->title, 'content' => $values->content, 'tags' => json_encode($values->tags, JSON_THROW_ON_ERROR),
+                    'publication_type' => $values->publication_type, 'publication_options' => json_encode($values->publication_options, JSON_THROW_ON_ERROR)]
+                    : $this->values($input + ['publication_type' => $draft->publication_type, 'publication_options' => json_decode($draft->publication_options ?? '[]', true)]);
                 foreach ($values as $key => $value) {
                     $draft->$key = $value;
                 }
@@ -269,6 +280,7 @@ final class DraftService
                 $this->resetApprovals($draft);
             } elseif ($action === 'submit') {
                 $actor->assertPermission($owner);
+                (new PublicationSettings($this->settings))->assertReady($draft);
                 if ($draft->status !== 'draft' || trim($draft->content) === '') {
                     throw new EditorialException('state', 409);
                 }
@@ -295,6 +307,7 @@ final class DraftService
                 $draft->status = 'draft';
             } elseif ($action === 'approve_directly') {
                 $actor->assertCan('el-choco-editorial.approveDirectly');
+                (new PublicationSettings($this->settings))->assertReady($draft);
                 if (!in_array($draft->status, ['draft', 'review', 'approved'], true) || trim($draft->content) === '') {
                     throw new EditorialException('state', 409);
                 }
@@ -327,7 +340,9 @@ final class DraftService
                 if (!$this->directApprovalValid($draft) && $eligible < $draft->required_approvals) {
                     throw new EditorialException('reviewers');
                 }
-                $draft->discussion_id = $this->publisher->publish($actor, $draft, $request);
+                (new PublicationSettings($this->settings))->assertReady($draft);
+                $draft->publication_id = $this->publisher->publish($actor, $draft, $request);
+                $draft->discussion_id = $draft->publication_type === 'wiki' ? null : $draft->publication_id;
                 $draft->status = 'published';
             } elseif ($action === 'archive') {
                 $actor->assertPermission($owner || $actor->can('el-choco-editorial.manage'));

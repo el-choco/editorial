@@ -2,9 +2,9 @@
 
 **Write together. Review with confidence. Publish when ready.**
 
-Editorial is a private collaborative writing workspace for Flarum 2. Invite other members, keep saved revisions, discuss changes internally and publish an approved manuscript as a normal forum discussion.
+Editorial is a private collaborative writing workspace for Flarum 2. Invite other members, keep saved revisions, discuss changes internally and publish an approved manuscript as a discussion, FoF Blog article or Link Robins Wiki article.
 
-**Package:** `el-choco/editorial` · **Version:** `1.0.1` · **License:** MIT
+**Package:** `el-choco/editorial` · **Version:** `1.0.2` · **License:** MIT
 
 ## Features
 
@@ -33,7 +33,7 @@ Enabling the extension creates four database tables. No worker, scheduler, exter
 
 ## Installation through Packagist
 
-After version 1.0.1 has been published on Packagist, run the following as the forum filesystem user inside the Flarum directory (inside the container for Docker):
+After version 1.0.2 has been published on Packagist, run the following as the forum filesystem user inside the Flarum directory (inside the container for Docker):
 
 ```bash
 composer require el-choco/editorial:"^1.0" --update-no-dev --minimal-changes --no-scripts --no-interaction
@@ -44,7 +44,7 @@ php flarum cache:clear --force
 
 With CrazyMax, run `extension sync` after the successful Composer operation and before the Flarum commands. `"^1.0"` permits future 1.x updates; `"*"` also permits future major versions, subject to Composer stability settings. Exact version requirements remain pinned. For a move from a local path installation to Packagist, remove the old path repository entry from its project or global configuration and replace the pinned requirement with `"^1.0"`.
 
-## Updating to 1.0.1
+## Updating to 1.0.2
 
 After the release is available on Packagist:
 
@@ -54,7 +54,7 @@ php flarum migrate
 php flarum cache:clear
 ```
 
-Run these as the forum filesystem user in the forum directory. With CrazyMax, run `extension sync` after the successful Composer operation, before the Flarum commands. If pinned to `1.0.0`, first use `composer require el-choco/editorial:"^1.0"` instead of `composer update`. This release requires a new migration adding two nullable columns for direct approvals. Existing drafts are preserved. Back up the database and Composer files before updating. Clear browser caches afterwards; reload PHP-FPM if OPcache keeps old code.
+Run these as the forum filesystem user in the forum directory. With CrazyMax, run `extension sync` after the successful Composer operation, before the Flarum commands. If pinned to `1.0.0`, first use `composer require el-choco/editorial:"^1.0"` instead of `composer update`. This release requires a new migration adding publication targets, metadata and separate publication IDs. Existing drafts are preserved. Back up the database and Composer files before updating. Clear browser caches afterwards; reload PHP-FPM if OPcache keeps old code.
 
 ## Permissions and administration
 
@@ -110,7 +110,7 @@ Limits: 50 active drafts per owner, 20 invited members per draft, 80-character t
 
 Backend checks use real Flarum 2.0.2 classes, migrations, query builders and an isolated SQLite database. They cover roles, privacy, state transitions, revision restoration, stale writes, revoked reviewer access, rollback and duplicate publication prevention. The publisher adapter is exercised with the real Flarum API client and a controlled response handler. Browser checks use the built frontend, real Flarum TextEditor/BasicEditorDriver classes and representative data.
 
-The maintainer reports successful testing of version 1.0.0 on the target forum without observed errors. Local regression checks cover the cases described above; this does not guarantee compatibility with every third-party composer tool. Version 1.0.1 adds the homepage, comparison and direct-approval features; these additions have local regression coverage and still need verification on the target forum.
+The maintainer reports successful testing of version 1.0.0 on the target forum without observed errors. Local regression checks cover the cases described above; this does not guarantee compatibility with every third-party composer tool. Version 1.0.2 adds optional blog and wiki publication. These adapters have local regression coverage with controlled API responses and need verification with the installed target extensions in your forum.
 
 ```bash
 cd js
@@ -127,13 +127,24 @@ The backend tests require `pdo_sqlite` and `mbstring` in the test PHP runtime. T
 
 ---
 
+## Publication destinations
+
+Choose **Discussion**, **FoF Blog** or **Link Robins Wiki** in the manuscript. FoF Blog requires one of its configured blog tags and supports a summary and cover image URL. Wiki publication uses the wiki’s own categories and an optional article slug. Optional destinations appear when enabled; neither addon is required for ordinary discussion publishing.
+
+Administrators can rename each destination independently. For example, name FoF Blog “Wiki” and the actual wiki “Knowledge base”. Renaming via Linguist does not change the technical integration.
+
+Targets and their metadata are private revision data, visible to the same participants as the manuscript. To change an approved target, reopen the manuscript, save the change and collect new approvals. Restoring a snapshot also restores its target and details. Publication is performed as the owner through the target’s normal API; Editorial does not bypass publishing rights, tag rules, wiki validation or additional blog moderation. Published wiki IDs are stored separately from discussion IDs. A failed publication retains the manuscript. Existing discussions and drafts are preserved by the migration.
+
+Source contracts were checked against FoF Blog 2.0.0-beta.5 and Link Robins Wiki v1.9.3. The native APIs receive only the approved title, content and publication metadata, never internal comments or private revision history. Wiki slugs accept lowercase letters, numbers and hyphens; blank means automatic. Cover images require a full HTTP/HTTPS URL. Wiki category choices load up to 1,000 categories; an existing selection is retained if loading fails.
+
+
 # Editorial
 
 **Gemeinsam schreiben. Verlässlich prüfen. Bewusst veröffentlichen.**
 
 Editorial ist ein privater Redaktionsbereich für Flarum 2. Lade Mitglieder ein, speichere Textrevisionen, sammle interne Rückmeldungen und veröffentliche ein freigegebenes Manuskript als normale Diskussion.
 
-**Paket:** `el-choco/editorial` · **Version:** `1.0.1` · **Lizenz:** MIT
+**Paket:** `el-choco/editorial` · **Version:** `1.0.2` · **Lizenz:** MIT
 
 ## Funktionen
 
@@ -162,7 +173,7 @@ Beim Aktivieren entstehen vier Datenbanktabellen. Ein Worker, Cronjob, externer 
 
 ## Installation über Packagist
 
-Nach Veröffentlichung der Version 1.0.1 auf Packagist als Dateisystembenutzer des Forums im Flarum-Verzeichnis ausführen (bei Docker im Container):
+Nach Veröffentlichung der Version 1.0.2 auf Packagist als Dateisystembenutzer des Forums im Flarum-Verzeichnis ausführen (bei Docker im Container):
 
 ```bash
 composer require el-choco/editorial:"^1.0" --update-no-dev --minimal-changes --no-scripts --no-interaction
@@ -173,7 +184,7 @@ php flarum cache:clear --force
 
 Bei CrazyMax nach erfolgreichem Composer-Vorgang und vor den Flarum-Befehlen `extension sync` ausführen. `"^1.0"` erlaubt künftige 1.x-Updates; `"*"` erlaubt auch spätere Hauptversionen unter Beachtung von Composers Stabilitätseinstellungen. Exakte Versionsvorgaben bleiben festgelegt. Beim Wechsel von einer lokalen Path-Installation zu Packagist den bisherigen Repository-Eintrag aus der Projekt- oder globalen Konfiguration entfernen und die festgelegte Versionsvorgabe durch `"^1.0"` ersetzen.
 
-## Update auf 1.0.1
+## Update auf 1.0.2
 
 Nach Verfügbarkeit des Releases auf Packagist:
 
@@ -239,4 +250,14 @@ Grenzen: 50 aktive Entwürfe pro Eigentümer, 20 eingeladene Mitglieder pro Entw
 
 Die Backend-Prüfungen verwenden echte Klassen aus Flarum 2.0.2, die Migrationen, Datenbankabfragen und eine isolierte SQLite-Datenbank. Sie prüfen Rollen, Privatsphäre, Statuswechsel, Wiederherstellen, veraltete Speicherstände, entzogene Prüferrechte, Rückabwicklung und Schutz vor doppelter Veröffentlichung. Der Veröffentlichungsadapter wird mit Flarums echtem API-Client und einer kontrollierten Antwort geprüft. Browserprüfungen verwenden den gebauten Frontend-Code, Flarums echte TextEditor-/BasicEditorDriver-Klassen und Beispieldaten.
 
-Der Betreiber meldet erfolgreiche Tests der Version 1.0.0 im Ziel-Forum ohne beobachtete Fehler. Die lokalen Prüfungen decken die oben beschriebenen Fälle ab; eine Kompatibilitätsgarantie für sämtliche Editor-Werkzeuge anderer Anbieter ergibt sich daraus nicht. Version 1.0.1 ergänzt Startseite, Vergleich und Direktfreigabe. Diese Ergänzungen sind lokal geprüft und müssen noch im Ziel-Forum bestätigt werden.
+Der Betreiber meldet erfolgreiche Tests der Version 1.0.0 im Ziel-Forum ohne beobachtete Fehler. Die lokalen Prüfungen decken die oben beschriebenen Fälle ab; eine Kompatibilitätsgarantie für sämtliche Editor-Werkzeuge anderer Anbieter ergibt sich daraus nicht. Version 1.0.2 ergänzt die optionalen Blog- und Wiki-Anbindungen. Diese sind mit kontrollierten API-Antworten lokal geprüft; die tatsächliche Veröffentlichung mit den installierten Ziel-Erweiterungen im eigenen Forum zusätzlich testen.
+
+## Veröffentlichungsziele
+
+Im Manuskript zwischen **Diskussion**, **FoF Blog** und **Link Robins Wiki** wählen. Optionale Ziele erscheinen nur mit aktivierter Erweiterung. Die Namen sind im Editorial-Adminbereich frei einstellbar: deinen FoF Blog etwa „Wiki“ nennen und Link Robins Wiki davon getrennt „Wissensdatenbank“.
+
+Für Blogartikel mindestens eine konfigurierte Blog-Kategorie auswählen; Kurzbeschreibung und Titelbild-Adresse sind optional. Für Wikiartikel gelten eigene Wiki-Kategorien und eine optionale Adresse mit Kleinbuchstaben, Zahlen und Bindestrichen. Leer erzeugt die Adresse automatisch. Titelbilder benötigen vollständige HTTP-/HTTPS-Adressen. Bis zu 1.000 Wiki-Kategorien werden geladen; bei einem Ladefehler bleibt eine bestehende Auswahl erhalten.
+
+Das Ziel und die Zusatzangaben gehören zur privaten Revision. Ein bereits freigegebenes Manuskript muss zum Ändern wieder geöffnet und anschließend erneut freigegeben werden. Auch das Wiederherstellen einer Revision übernimmt deren Ziel und Zusatzangaben. Die Veröffentlichung läuft als Eigentümer über die normalen APIs. Rechte, Kategorieregeln und eine zusätzliche FoF-Blog-Moderation bleiben wirksam. Wikiartikel haben eigene IDs und werden nicht zusätzlich als Diskussion erstellt. Interne Kommentare und Revisionsverlauf werden nicht an Blog oder Wiki übergeben.
+
+Die neue Datenbankmigration erhält vorhandene Entwürfe und Diskussionslinks. Geprüfte Quelltextverträge: FoF Blog 2.0.0-beta.5 und Link Robins Wiki v1.9.3. API-Adapter sind lokal mit kontrollierten Antworten geprüft; die Veröffentlichung mit den tatsächlich installierten Erweiterungen bitte ebenfalls im Forum testen.
